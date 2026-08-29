@@ -336,7 +336,13 @@ def _shared_glyph_memory_path():
     return _os.path.expanduser("~/.glyph/MEMORY.md")
 
 
-def _read_agents_file(path, label, max_body=2500):
+def _read_agents_file(path, label, max_body=2500, sections=None):
+    """Liest AGENTS.md — optional nur bestimmte '## '-Sektionen.
+
+    sections: Liste von Sektions-Titeln (ohne '## '). Wenn gesetzt, werden nur
+    diese Sektionen extrahiert (statt pauschal die ersten max_body Zeichen —
+    das schnitt bisher die für °_Agent wichtigen Teile wie Jobs/HSEQ/Wiki ab).
+    """
     import os as _os
     if not path or not _os.path.isfile(path):
         return None
@@ -347,28 +353,62 @@ def _read_agents_file(path, label, max_body=2500):
         return None
     if not body:
         return None
+    if sections:
+        lines = body.splitlines()
+        wanted = [s.lower().strip() for s in sections]
+        out = []
+        cur = None
+        for l in lines:
+            if l.startswith("## "):
+                cur = l[3:].strip().lower()
+                if cur in wanted:
+                    out.append(l)
+                else:
+                    cur = None
+            elif cur is not None:
+                out.append(l)
+        body = "\n".join(out).strip()
+    if not body:
+        return None
     if len(body) > max_body:
         body = body[: max_body - 20] + "\n…[gekürzt]"
     return f"### {label}\n{body}"
 
 
-def _vault_contracts_prompt(max_chars=5500):
+def _vault_contracts_prompt(max_chars=6500):
     """Lädt Shared SoT + MEMORY + Vault-AGENTS in den System-Prompt."""
     import os as _os
 
     chunks = []
+    # Für °_Agent relevante AGENTS.md-Sektionen (Prinzip, Vaults, Jobs, Skills,
+    # HSEQ, Wiki, Stil) — NICHT die ersten 2800 Zeichen (die schnitten Jobs/
+    # HSEQ/Wiki ab, weil Profile/Code/Grok davor stehen).
     shared = _read_agents_file(
         _shared_glyph_contract_path(),
         "SHARED SoT · ~/.glyph/AGENTS.md (alle Profile)",
-        max_body=2800,
+        max_body=4500,
+        sections=[
+            "Prinzip",
+            "Vaults (°_Agent) — Kabelsalat",
+            "Jobs (Alias = recurring) — alles Glyph",
+            "Skills (alle Profile, `~/.glyph/skills/`)",
+            "HSEQ-Arbeitsfluss (kurz)",
+            "Wiki",
+            "Stil",
+        ],
     )
     if shared:
         chunks.append(shared)
 
     mem = _read_agents_file(
         _shared_glyph_memory_path(),
-        "MEMORY · ~/.glyph/MEMORY.md (Lektionen — nicht neu erfinden)",
+        "MEMORY · ~/.glyph/MEMORY.md (Regeln + Jobs — nicht neu erfinden)",
         max_body=2200,
+        sections=[
+            "3) Eiserne Regeln (dauerhaft)",
+            "4) Jobs (Owner = Glyph) — Stand 2026-08-09",
+            "5) Stack-Kurz",
+        ],
     )
     if mem:
         chunks.append(mem)

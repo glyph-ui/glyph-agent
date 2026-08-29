@@ -446,6 +446,48 @@ def _parse_dsml_tool_call(text):
     return (name, args)
 
 
+def _parse_plain_invoke_tool_call(text):
+    """Erster <invoke name="X">…</invoke>-Block OHNE DSML-Mark (ASCII-Leak).
+
+    DeepSeek schreibt gelegentlich:
+      <tool_calls>\n<invoke name="VaultFind">\n<parameter name="query">…</parameter>\n</invoke>\n</tool_calls>
+    Der DSML-Parser verlangt das U+FF5C-Mark — diese ASCII-Form erkennt er nicht.
+    """
+    if not text or "<invoke" not in text:
+        return None
+    # Nur bekannte Tool-Namen akzeptieren (verhindert False Positives, wenn das
+    # Modell über DSML/Invoke REDET statt es zu nutzen).
+    known = set()
+    try:
+        from . import tool_registry as _self
+
+        known = set(_self.tool_map("agent")) | set(_self.tool_map("code"))
+    except Exception:
+        pass
+    inv = re.search(
+        r"<invoke\s+name=\"([^\"]+)\"\s*>(.*?)(?:</invoke>|$)",
+        text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if not inv:
+        return None
+    name = (inv.group(1) or "").strip()
+    if not name or (known and name not in known):
+        return None
+    body = inv.group(2) or ""
+    args = {}
+    for pm in re.finditer(
+        r"<parameter\s+name=\"([^\"]+)\"\s*>(.*?)</parameter>",
+        body,
+        re.DOTALL | re.IGNORECASE,
+    ):
+        key = (pm.group(1) or "").strip()
+        if not key:
+            continue
+        args[key] = _coerce_dsml_value(pm.group(2), None)
+    return (name, args)
+
+
 def try_parse_tool_call(text):
     """
     Versucht, aus der Modell-Antwort einen Tool-Call zu extrahieren.
@@ -461,6 +503,12 @@ def try_parse_tool_call(text):
     dsml = _parse_dsml_tool_call(text)
     if dsml is not None:
         return dsml
+
+    # DeepSeek leaked manchmal auch <tool_calls>/<invoke> OHNE DSML-Mark (ASCII).
+    # Dann: <tool_calls>…<invoke name="X"><parameter name="k">v</parameter></invoke>…
+    plain = _parse_plain_invoke_tool_call(text)
+    if plain is not None:
+        return plain
 
     s = text.strip()
     # Markdown-Codeblock entfernen, falls die ganze Antwort einer ist
