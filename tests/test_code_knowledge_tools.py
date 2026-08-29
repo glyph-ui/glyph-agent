@@ -98,3 +98,78 @@ class KnowledgeToolsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VaultWriteTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = self._tmp.name
+        import core.vaults_registry as vr
+
+        self.vr = vr
+        self._orig_dir = vr.GLYPH_DIR
+        self._orig_store = vr.USER_STORE
+        self._orig_defaults = vr.DEFAULTS_STORE
+        vr.GLYPH_DIR = self.root
+        vr.USER_STORE = os.path.join(self.root, "vaults.json")
+        vr.DEFAULTS_STORE = os.path.join(self.root, "vaults.defaults.json")
+        self._write_vault(os.path.realpath(self.root), "r")
+        from core import code_grants
+
+        code_grants.reset()
+
+    def tearDown(self):
+        self.vr.GLYPH_DIR = self._orig_dir
+        self.vr.USER_STORE = self._orig_store
+        self.vr.DEFAULTS_STORE = self._orig_defaults
+        self._tmp.cleanup()
+
+    def _write_vault(self, path, head):
+        with open(self.vr.USER_STORE, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "version": 1,
+                    "vaults": [
+                        {
+                            "id": "v1",
+                            "name": "v1",
+                            "path": path,
+                            "mode": "rw",
+                            "heads": {"grok": "rw", "agent": "rw", "code": head},
+                            "enabled": True,
+                        }
+                    ],
+                },
+                f,
+            )
+
+    def test_vault_write_denied_without_rw(self):
+        self._write_vault(os.path.realpath(self.root), "r")
+        d = code_tools.permission_decision("VaultWrite", {"path": "x.md", "content": "y"})
+        self.assertEqual(d["action"], "deny")
+        r = code_tools.vault_write("x.md", "y")
+        self.assertFalse(r["ok"])
+
+    def test_vault_write_requires_grant_with_rw(self):
+        self._write_vault(os.path.realpath(self.root), "rw")
+        d = code_tools.permission_decision("VaultWrite", {"path": "x.md", "content": "y"})
+        self.assertEqual(d["action"], "requires_grant")
+
+    def test_vault_write_applies_with_grant(self):
+        self._write_vault(os.path.realpath(self.root), "rw")
+        from core import code_grants
+
+        code_grants.issue(
+            scope="once",
+            workspace_root=os.path.realpath(self.root),
+            path_prefixes=["/"],
+            action_classes=("file_change",),
+        )
+        d = code_tools.permission_decision("VaultWrite", {"path": "x.md", "content": "hallo"})
+        self.assertEqual(d["action"], "allow")
+        r = code_tools.vault_write("x.md", "hallo")
+        self.assertTrue(r["ok"], r)
+        # Datei existiert jetzt
+        import os as _os
+
+        self.assertTrue(_os.path.exists(_os.path.join(self.root, "x.md")))

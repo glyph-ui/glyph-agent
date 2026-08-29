@@ -977,6 +977,61 @@ def permission_decision(tool_name, args):
             **extra,
         }
 
+    if name == "VaultWrite":
+        if not _vault_write_enabled():
+            return {
+                "action": "deny",
+                "reason": "Kein Vault für ^_Code auf Schreiben (rw) geschaltet — Graph: Kopf ^_Code am Vault auf Schreiben.",
+                "elevated": False,
+                "risk": "",
+                "preview": "",
+            }
+        path = args.get("path") or ""
+        preview = f"VaultWrite → {path}\n{str(args.get('content') or '')[:300]}"
+        # Vault-Root des Pfads ermitteln (für Grant-Matching)
+        root = ""
+        rel = str(path or "")
+        try:
+            from . import config as _cfg
+            from . import vault_tools as _vt
+
+            _cfg.reload_vault_paths()
+            resolved = _vt._resolve_vault_path(rel)
+            if resolved:
+                for r in getattr(_cfg, "VAULT_PATHS", []) or []:
+                    rr = os.path.realpath(r)
+                    if resolved == rr or resolved.startswith(rr + os.sep):
+                        root = rr
+                        break
+        except Exception:
+            pass
+        if not root:
+            return {
+                "action": "deny",
+                "reason": f"Pfad nicht in einem Vault: {path}",
+                "elevated": False,
+                "risk": "",
+                "preview": preview,
+            }
+        hit = code_grants.matching(root, rel, "file_change")
+        if hit:
+            return {
+                "action": "allow",
+                "reason": code_grants.why_allowed(hit),
+                "elevated": False,
+                "risk": "",
+                "preview": preview,
+                "grant_id": hit.get("grant_id"),
+                "allowed_by": code_grants.why_allowed(hit),
+            }
+        return {
+            "action": "requires_grant",
+            "reason": "Freigabe für Vault-Änderung",
+            "elevated": False,
+            "risk": "",
+            "preview": preview,
+        }
+
     if name == "RunCommand":
         cmd = args.get("command") or ""
         cwd = args.get("cwd") or "."
@@ -1101,6 +1156,11 @@ def preview_for_confirm(tool_name, args):
         if kind == "elevated" and risk:
             return f"⚠ {risk}\n{base}"
         return base
+    if tool_name == "VaultWrite":
+        path = args.get("path") or ""
+        content = str(args.get("content") or "")
+        prev = content if len(content) <= 400 else content[:400] + "…"
+        return f"VaultWrite → {path}\n{prev}"
     return f"{tool_name}: {args}"
 
 
@@ -1229,3 +1289,50 @@ def read_memory(scope="recent"):
         return memory_tools.read_memory(str(scope or "recent"))
     except Exception as e:
         return {"ok": False, "error": str(e)[:300]}
+
+
+def _vault_write_enabled() -> bool:
+    """True, wenn mindestens ein Vault für ^_Code auf rw geschaltet ist."""
+    try:
+        from . import vaults_registry as vr
+
+        vr.load_store()
+        for v in vr.list_vaults() or []:
+            heads = (v or {}).get("heads") or {}
+            if str(heads.get("code") or "unbound").strip() == "rw":
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def vault_write(path, content):
+    """Schreibt eine Vault-Notiz (create neu / apply_edit mit Backup).
+    Nur wenn ein Vault im Graph auf rw für ^_Code geschaltet ist.
+    Erfordert Grant (Einmal/Auftrag/Task) — wie WriteFile."""
+    if not _vault_write_enabled():
+        return {
+            "ok": False,
+            "error": "Kein Vault für ^_Code auf Schreiben (rw) geschaltet — im Graph Kopf ^_Code am Vault auf Schreiben stellen.",
+        }
+    try:
+        from . import config as _cfg
+        from . import vault_tools
+
+        _cfg.reload_vault_paths()
+        p = str(path or "").strip()
+        c = str(content or "")
+        # Existiert die Notiz?
+        exists = True
+        try:
+            vault_tools.read_note(p)
+        except Exception:
+            exists = False
+        if exists:
+            res = vault_tools.apply_edit(p, c)
+            return {"ok": True, "path": res.get("path"), "action": "edit", "chars": res.get("new_chars")}
+        res = vault_tools.create_note(p, c)
+        return {"ok": True, "path": res.get("path"), "action": "create", "created": res.get("created")}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+

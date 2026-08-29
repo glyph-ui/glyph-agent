@@ -366,6 +366,12 @@ CODE_TOOLS = [
         "args": {"scope": "str optional: recent (Default) | all | MEMORY.md"},
         "write": False,
     },
+    {
+        "name": "VaultWrite",
+        "description": "Schreibt eine Vault-Notiz (neu oder Änderung mit Backup). Nur wenn Vault im Graph auf rw für ^_Code. Braucht Freigabe (Einmal/Auftrag/Task).",
+        "args": {"path": "str, relativer Notizpfad im Vault", "content": "str, kompletter neuer Inhalt"},
+        "write": True,
+    },
 ]
 
 TOOL_MAP = {t["name"]: t for t in TOOLS}
@@ -804,4 +810,6 @@ def _execute_code(tool_name, args, allow_elevated=False):
         return {"ok": True, "result": code_tools.mail_read(args.get("id", ""), args.get("folder"))}
     if tool_name == "ReadMemory":
         return {"ok": True, "result": code_tools.read_memory(args.get("scope"))}
+    if tool_name == "VaultWrite":
+        return {"ok": True, "result": code_tools.vault_write(args.get("path", ""), args.get("content", ""))}
     return {"ok": False, "result": None, "error": f"Tool '{tool_name}' nicht implementiert."}
