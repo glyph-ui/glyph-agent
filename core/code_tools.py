@@ -919,6 +919,21 @@ def permission_decision(tool_name, args):
             "preview": "",
         }
 
+    # Stufe 1+2: read-only Wissens-/Reichweiten-Tools — immer erlaubt
+    # (Vault-Zugriff intern durch Graph-Head geschützt).
+    if name in (
+        "VaultFind", "ReadNote", "WikiGet",
+        "WebSearch", "ExtractUrl",
+        "MailList", "MailRead", "ReadMemory",
+    ):
+        return {
+            "action": "allow",
+            "reason": "read-only Wissens-Tool",
+            "elevated": False,
+            "risk": "",
+            "preview": "",
+        }
+
     if name in ("WriteFile", "SearchReplace"):
         path = args.get("path")
         abs_path, root = _resolve_path(path)
@@ -1087,3 +1102,130 @@ def preview_for_confirm(tool_name, args):
             return f"⚠ {risk}\n{base}"
         return base
     return f"{tool_name}: {args}"
+
+
+# --- Stufe 1+2: Wissen & Reichweite (read-only, Graph-gesteuert) ---
+
+
+def vault_heads_enabled() -> bool:
+    """True, wenn mindestens ein Vault für ^_Code freigeschaltet ist
+    (heads.code in vaults.json ≠ unbound — Graph-Schalter)."""
+    try:
+        from . import vaults_registry as vr
+
+        vr.load_store()
+        for v in vr.list_vaults() or []:
+            heads = (v or {}).get("heads") or {}
+            if str(heads.get("code") or "unbound").strip() not in ("", "unbound"):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def vault_find(query, top_k=8):
+    """Vault-Suche (Hybrid) über die freigeschalteten Vaults. Read-only."""
+    if not vault_heads_enabled():
+        return {
+            "ok": False,
+            "error": "Kein Vault für ^_Code freigeschaltet — im Graph (Anbindung) Kopf ^_Code am Vault auf Lesen/Schreiben stellen.",
+        }
+    try:
+        from . import retrieval
+
+        res = retrieval.vault_find(str(query or ""), top_k=int(top_k or 8))
+        if isinstance(res, dict):
+            hits = res.get("results") or res.get("selected") or res.get("candidates") or []
+            return {"ok": True, "hits": hits, "meta": {k: res[k] for k in ("status", "query", "mode") if k in res}}
+        return {"ok": True, "hits": res or []}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+def read_note(path):
+    """Liest eine Vault-Notiz (relativer Pfad im Vault). Read-only."""
+    if not vault_heads_enabled():
+        return {"ok": False, "error": "Kein Vault für ^_Code freigeschaltet (Graph)."}
+    try:
+        from . import config as _cfg
+        from . import vault_tools
+
+        _cfg.reload_vault_paths()
+        res = vault_tools.read_note(str(path or ""))
+        return {"ok": True, "path": res.get("path"), "content": (res.get("content") or "")[:8000]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+def wiki_get(lookup):
+    """Liest eine Wiki-Seite (memory-wiki) per lookup. Read-only."""
+    if not vault_heads_enabled():
+        return {"ok": False, "error": "Kein Vault für ^_Code freigeschaltet (Graph)."}
+    try:
+        from . import config as _cfg
+        from . import vault_tools
+
+        _cfg.reload_vault_paths()
+        res = vault_tools.read_note(str(lookup or ""))
+        return {"ok": True, "path": res.get("path"), "content": (res.get("content") or "")[:8000]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+def web_search(query, count=5):
+    """Web-Suche (Exa + TinyFish). Read-only."""
+    try:
+        from . import web
+
+        rows = web.web_search(str(query or ""), count=int(count or 5))
+        return {"ok": True, "results": rows or []}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+def extract_url(url, goal=None):
+    """Holt eine URL (TinyFish) und extrahiert Text. Read-only."""
+    try:
+        from . import web
+
+        text = web.extract_tinyfish(str(url or ""), goal or "Extrahiere relevante Fakten")
+        return {"ok": True, "content": (text or "")[:8000]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+def mail_list(folder="INBOX", query="", limit=20):
+    """Listet E-Mails (himalaya). Read-only."""
+    try:
+        from . import comm_tools
+
+        res = comm_tools.mail_list(
+            folder=str(folder or "INBOX"),
+            query=str(query or ""),
+            limit=int(limit or 20),
+        )
+        return res
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+def mail_read(msg_id, folder="INBOX"):
+    """Liest eine E-Mail (himalaya). Read-only."""
+    try:
+        from . import comm_tools
+
+        res = comm_tools.mail_read(str(msg_id or ""), folder=str(folder or "INBOX"))
+        return res
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+def read_memory(scope="recent"):
+    """Liest OpenClaw-Memory (MEMORY.md + Tageslogs) für Session-Kontext.
+    scope: recent (letzte 3 Tage) | all | MEMORY.md. Read-only."""
+    try:
+        from . import memory_tools
+
+        return memory_tools.read_memory(str(scope or "recent"))
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}

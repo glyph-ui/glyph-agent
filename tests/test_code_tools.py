@@ -274,6 +274,18 @@ class EmptyRegistryRootsTests(unittest.TestCase):
         self._old_roots = list(config.CODE_WORKSPACE_ROOTS)
         wr.GLYPH_DIR = self.root
         wr.USER_STORE = self.store
+        # Vault-Registry isolieren (accessible_roots() liest auch vr)
+        import core.vaults_registry as _vr
+
+        self._vr = _vr
+        self._orig_vr_dir = _vr.GLYPH_DIR
+        self._orig_vr_store = _vr.USER_STORE
+        self._orig_vr_defaults = _vr.DEFAULTS_STORE
+        _vr.GLYPH_DIR = self.root
+        _vr.USER_STORE = os.path.join(self.root, "vaults.json")
+        _vr.DEFAULTS_STORE = os.path.join(self.root, "vaults.defaults.json")
+        with open(_vr.USER_STORE, "w", encoding="utf-8") as f:
+            json.dump({"version": 1, "vaults": []}, f)
         bind_store._mtime_cache.clear()
         with open(self.store, "w", encoding="utf-8") as f:
             json.dump({"version": 1, "workspaces": []}, f)
@@ -283,6 +295,9 @@ class EmptyRegistryRootsTests(unittest.TestCase):
     def tearDown(self):
         self.wr.GLYPH_DIR = self._orig_dir
         self.wr.USER_STORE = self._orig_store
+        self._vr.GLYPH_DIR = self._orig_vr_dir
+        self._vr.USER_STORE = self._orig_vr_store
+        self._vr.DEFAULTS_STORE = self._orig_vr_defaults
         config.CODE_WORKSPACES_USE_REGISTRY = self._old_reg
         config.CODE_WORKSPACE_ROOTS = self._old_roots
         self.bind_store._mtime_cache.clear()

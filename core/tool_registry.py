@@ -318,6 +318,54 @@ CODE_TOOLS = [
         },
         "write": True,  # Policy entscheidet Popup vs auto
     },
+    {
+        "name": "VaultFind",
+        "description": "Vault-Suche (Hybrid) über die freigeschalteten Vaults (Graph). Read-only.",
+        "args": {"query": "str", "top_k": "int optional, Default 8"},
+        "write": False,
+    },
+    {
+        "name": "ReadNote",
+        "description": "Liest eine Vault-Notiz (relativer Pfad). Nur wenn Vault im Graph freigeschaltet. Read-only.",
+        "args": {"path": "str, relativer Notizpfad im Vault"},
+        "write": False,
+    },
+    {
+        "name": "WikiGet",
+        "description": "Liest eine memory-wiki-Seite (concepts/entities/syntheses). Read-only.",
+        "args": {"lookup": "str, Seitenname oder Pfad"},
+        "write": False,
+    },
+    {
+        "name": "WebSearch",
+        "description": "Web-Suche (Exa + TinyFish). Read-only.",
+        "args": {"query": "str", "count": "int optional, Default 5"},
+        "write": False,
+    },
+    {
+        "name": "ExtractUrl",
+        "description": "Holt eine URL (TinyFish) und extrahiert Text. Read-only.",
+        "args": {"url": "str", "goal": "str optional, Extraktionsziel"},
+        "write": False,
+    },
+    {
+        "name": "MailList",
+        "description": "Listet E-Mails (himalaya, INBOX). Read-only.",
+        "args": {"folder": "str optional, Default INBOX", "query": "str optional", "limit": "int optional, max 100"},
+        "write": False,
+    },
+    {
+        "name": "MailRead",
+        "description": "Liest eine E-Mail (himalaya). Read-only.",
+        "args": {"id": "str, Message-ID", "folder": "str optional"},
+        "write": False,
+    },
+    {
+        "name": "ReadMemory",
+        "description": "Liest OpenClaw-Memory (MEMORY.md + Tageslogs) für Kontext über Sessions. Read-only.",
+        "args": {"scope": "str optional: recent (Default) | all | MEMORY.md"},
+        "write": False,
+    },
 ]
 
 TOOL_MAP = {t["name"]: t for t in TOOLS}
@@ -739,4 +787,21 @@ def _execute_code(tool_name, args, allow_elevated=False):
         )
         # exit_code != 0 ist kein Tool-Fehler — Ergebnis trotzdem ok
         return {"ok": True, "result": res}
+    # --- Stufe 1+2: Wissen & Reichweite (read-only) ---
+    if tool_name == "VaultFind":
+        return {"ok": True, "result": code_tools.vault_find(args.get("query", ""), top_k=args.get("top_k"))}
+    if tool_name == "ReadNote":
+        return {"ok": True, "result": code_tools.read_note(args.get("path", ""))}
+    if tool_name == "WikiGet":
+        return {"ok": True, "result": code_tools.wiki_get(args.get("lookup", ""))}
+    if tool_name == "WebSearch":
+        return {"ok": True, "result": code_tools.web_search(args.get("query", ""), count=args.get("count"))}
+    if tool_name == "ExtractUrl":
+        return {"ok": True, "result": code_tools.extract_url(args.get("url", ""), goal=args.get("goal"))}
+    if tool_name == "MailList":
+        return {"ok": True, "result": code_tools.mail_list(args.get("folder"), args.get("query"), args.get("limit"))}
+    if tool_name == "MailRead":
+        return {"ok": True, "result": code_tools.mail_read(args.get("id", ""), args.get("folder"))}
+    if tool_name == "ReadMemory":
+        return {"ok": True, "result": code_tools.read_memory(args.get("scope"))}
     return {"ok": False, "result": None, "error": f"Tool '{tool_name}' nicht implementiert."}
