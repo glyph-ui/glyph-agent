@@ -11,6 +11,9 @@ __pycache__/
 # --- Umgebung/Secrets (nie einchecken) ---
 .env
 .env.local
+.env.*
+*.bak
+*.bak.*
 
 # --- Editor/OS ---
 .DS_Store
