@@ -284,6 +284,12 @@ class OpenRouterProvider(ModelProvider):
             "temperature": temperature,
             "stream": False,
         }
+        # Reasoning-Pflicht-Modelle (z.B. GLM 5.3 Flash) denken ohne max_tokens
+        # endlos → 60s+ Latenz. Ein vernünftiges Cap hält Antwort + Tool-JSON
+        # möglich, begrenzt aber das Reasoning. Konfigurierbar via MAX_TOKENS.
+        max_tokens = getattr(_cfg, "MAX_TOKENS", 0) or 0
+        if max_tokens > 0:
+            payload["max_tokens"] = max_tokens
         req = urllib.request.Request(
             f"{str(use_url).rstrip('/')}/chat/completions",
             data=json.dumps(payload).encode("utf-8"),

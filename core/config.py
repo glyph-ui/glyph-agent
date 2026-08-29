@@ -150,6 +150,9 @@ CHAT_TIMEOUT = int(os.environ.get("CHAT_TIMEOUT", "60"))
 # CODE-Modus: eigener Override. Multi-Round + Diffs brauchen mehr als 60s —
 # Default 180s (vorher = CHAT_TIMEOUT und brach oft mitten in Tool-Ketten ab).
 CODE_CHAT_TIMEOUT = int(os.environ.get("CODE_CHAT_TIMEOUT", "180"))
+# Reasoning-Cap für GLM & Co.: ohne max_tokens denken Reasoning-Pflicht-
+# Modelle endlos (60s+). 0 = kein Limit (Default).
+MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "4000"))
 # Shell-Whitelist (Regex, match auf den gesamten Befehl). Nie rm/sudo/push usw. (Deny in code_tools).
 # Env-Override: CODE_SHELL_ALLOW mit Einträgen getrennt durch "||" (Komma bricht |Alternativen).
 _CODE_SHELL_DEFAULT = [
