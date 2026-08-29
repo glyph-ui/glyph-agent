@@ -162,6 +162,24 @@ def _save_pending(state):
     return token
 
 
+def _peek_pending(token):
+    """Liefert State ohne zu konsumieren (Resume darf Token mehrfach nutzen)."""
+    with _PENDING_LOCK:
+        state = _PENDING.get(token)
+        if not state:
+            return None
+        if time.time() - state.get("ts", 0) > _PENDING_TTL_S:
+            _PENDING.pop(token, None)
+            return None
+        return dict(state)
+
+
+def _drop_pending(token):
+    """Entfernt Token nach erfolgreichem Resume."""
+    with _PENDING_LOCK:
+        _PENDING.pop(token, None)
+
+
 def _pop_pending(token):
     with _PENDING_LOCK:
         return _PENDING.pop(token, None)
@@ -966,7 +984,7 @@ def run_code(
 
     # --- Resume nach Genehmigung ---
     if resume_token:
-        state = _pop_pending(resume_token)
+        state = _peek_pending(resume_token)
         if not state:
             return {
                 "ok": False,
@@ -976,11 +994,16 @@ def run_code(
                 "pending_confirmation": False,
                 "trace": _build_trace([], steps=[{"step": "resume", "status": "error"}]),
             }
-        return _continue_from_state(
+        result = _continue_from_state(
             state, allow_pending=bool(allow_pending), confirm=confirm,
             max_rounds=max_rounds, on_event=on_event, _emit=_emit,
             grant_scope=grant_scope, grant_spec=grant_spec,
         )
+        # Token erst bei Erfolg konsumieren; bei Fehler (falscher Scope/allow,
+        # Ausnahme) zurücklegen, damit die UI es erneut senden kann.
+        if result.get("ok") and not result.get("pending_confirmation"):
+            _drop_pending(resume_token)
+        return result
 
     from . import history as chat_history
 
