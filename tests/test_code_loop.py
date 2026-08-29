@@ -135,8 +135,11 @@ class PickTestTests(unittest.TestCase):
 class CodeRoleTests(unittest.TestCase):
     def test_role_mentions_einmal_job(self):
         text = code_loop.code_role()
-        self.assertIn("einmal-job", text)
-        self.assertIn("EINMAL-JOB", text)
+        # Einmal-Job-Regel ist in den AGENTS-§Code (Contract-Snippet) gewandert —
+        # nicht mehr doppelt in der Rolle.
+        snippet = code_loop._shared_contract_snippet()
+        self.assertIn("einmal-job", text + snippet)
+        self.assertIn("EINMAL-JOB", text + snippet)
 
     def test_agent_role_mentions_einmal_job(self):
         from core.tool_loop import _role

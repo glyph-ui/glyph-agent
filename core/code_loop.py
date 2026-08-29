@@ -69,24 +69,16 @@ def code_role():
         "- STOP_SLOP: Kern zuerst, aktiv, konkret. Keine Floskeln "
         "(Gerne, Absolut, Zusammenfassend…, Es ist wichtig zu beachten, Als KI…, "
         "I hope this helps, Let’s dive in). Keine erfundenen Normen/Facts.\n"
-        "- Bei kleinen Änderungen: Grep/ReadFile → SearchReplace (old muss exakt 1× vorkommen).\n"
-        "- Bei großen/neuen Dateien: ReadFile → WriteFile mit komplettem Inhalt.\n"
-        "- WriteFile/SearchReplace unter r+w: Änderungen **stagen**, nicht still schreiben. "
-        "Glyph zeigt den Änderungssatz (Gesamt-Diff); Apply erst nach Freigabe "
-        "(Einmal / Auftrag / Task).\n"
-        "- Shell: Lesen (git status/diff, ls) ohne Popup. npm test / build / commit / "
-        "install brauchen Freigabe. git commit, npm install/npx, Netzwerk, push: immer explizit.\n"
-        "- BUILD-PFLICHT: Nach angewandtem Write in einer JS/CSS-UI "
-        "(package.json + vite.config.js): `npm run build` vorschlagen — gilt nur mit Freigabe.\n"
-        "- Elevated (git push/pull/fetch, Compound &&|;|, npm run service:*): Glyph fragt einmal.\n"
-        "- Hart verboten: rm, sudo, Backticks, $() — auch nach Freigabe.\n"
+        "- Schreib-/Shell-Regeln (Stagen, Freigabe Einmal/Auftrag/Task, Shell-Whitelist, "
+        "Elevated, Hart verboten, Build-Pflicht): siehe SHARED SoT §Code unten — nicht "
+        "doppelt hier.\n"
         "- Bevorzuge EINEN Befehl pro RunCommand; Compound nur wenn nötig (dann Freigabe).\n"
         "- WAHRHEIT: Datei-Änderungen/Shell-Erfolge NUR behaupten, wenn das Tool-Ergebnis "
         "ok=true war. Ohne erfolgreichen Write/Replace/Command: ehrlich sagen, was fehlt "
         "(Fehler, Ablehnung, Timeout) — nie „erledigt“ erfinden.\n"
         "- Kein Vault, kein Obsidian, keine privaten Pfade außerhalb der Roots.\n"
         f"- Bei Modell-Fragen: nenne {denker} und den konfigurierten Denker, Profil ^_Code.\n"
-        "- SHARED SoT: `~/.glyph/AGENTS.md` gilt auch für dich (Jobs/Vaults/Skills/Red Line) — "
+        "- SHARED SoT: `~/.glyph/AGENTS.md` §Code gilt (Jobs/Vaults/Skills/Red Line) — "
         "nicht im Chat neu verhandeln, was dort und in Repo-CONTEXT geklärt ist.\n"
         "- EINMAL-JOB: Wiederkehrendes 1× Plan→Ja, dann Recurring (Kalender→Plan). "
         "Nicht recurring.json per Hand. Irreversibel: Plan→Ja. "
@@ -94,7 +86,7 @@ def code_role():
         "- KORREKTUR: Chat vs. AGENTS/CONTEXT → Konflikt nennen, Vertrag gewinnt. "
         "Vorschlag nach ~/.glyph/memory/pending-contract.md, nicht nur in den Chat. "
         "AGENTS/MEMORY nur nach Auftrag. Repo-Verhalten → CONTEXT.md.\n"
-        "- ORIENT: Orient+System map der r+w-Workspaces liegen im System-Prompt. "
+        "- ORIENT: Orient+System map der r+w-Workspaces liegen im System-Prompt (Runde 1). "
         "Kein Blind-Walk (ListDir/Grep über den ganzen Tree). Gezielt die genannten Quellen. "
         "Map veraltet → nach Struktur-Change dort nachziehen, nicht parallele Doku erfinden.\n"
         "- GROSSE DATEIEN (z. B. App.jsx >100k Zeichen): NICHT komplett in vielen "
@@ -106,8 +98,16 @@ def code_role():
 
 
 def _shared_contract_snippet(max_chars=3200):
-    """Gemeinsame Wahrheit Grok/Code/Agent — AGENTS + MEMORY unter ~/.glyph/"""
+    """Gemeinsame Wahrheit für ^_Code — nur Code-relevante Teile.
+
+    - pending-contract (aktuelle offene Punkte)
+    - AGENTS.md: NUR der '## Code (^_Code)'-Abschnitt (Rest: Grok/HSEQ/OpenClaw
+      ist für Code-Aufgaben irrelevant)
+    - MEMORY.md wird hier NICHT geladen (Projekt-Historie/HSEQ-Lektionen sind
+      für Datei-/Shell-Aufgaben nicht nötig; spart ~1600 Z pro Call)
+    """
     import os as _os
+    import re as _re
 
     parts = []
     try:
@@ -118,22 +118,26 @@ def _shared_contract_snippet(max_chars=3200):
         pending = None
     if pending:
         parts.append(pending)
-    for path, label, cap in (
-        (_os.path.expanduser("~/.glyph/AGENTS.md"), "SHARED SoT · AGENTS.md", 2000),
-        (_os.path.expanduser("~/.glyph/MEMORY.md"), "MEMORY (Lektionen)", 1600),
-    ):
-        if not _os.path.isfile(path):
-            continue
-        try:
-            with open(path, encoding="utf-8", errors="replace") as f:
-                body = f.read().strip()
-        except OSError:
-            continue
-        if not body:
-            continue
-        if len(body) > cap:
-            body = body[: cap - 20] + "\n…[gekürzt]"
-        parts.append(f"### {label}\n{body}")
+
+    agents_path = _os.path.expanduser("~/.glyph/AGENTS.md")
+    try:
+        with open(agents_path, encoding="utf-8", errors="replace") as f:
+            body = f.read().strip()
+    except OSError:
+        body = ""
+    if body:
+        # Nur '## Code (^_Code)' bis zur nächsten '## '-Überschrift
+        m = _re.search(r"^## Code\b.*?(?=^## |\Z)", body, _re.MULTILINE | _re.DOTALL)
+        if m:
+            code_section = m.group(0).strip()
+        else:
+            # Fallback: erste 2000 Zeichen (wie vorher)
+            code_section = body[:2000].strip()
+        if code_section:
+            if len(code_section) > 2400:
+                code_section = code_section[:2380] + "\n…[gekürzt]"
+            parts.append(f"### SHARED SoT · AGENTS.md (§Code)\n{code_section}")
+
     if not parts:
         return ""
     text = "\n\n".join(parts)
@@ -840,6 +844,7 @@ def _pause_grant(
     after_args,
     decision,
     auftrag_id,
+    system_lean=None,
 ):
     suggested = _suggested_grant(staged, decision, user_message)
     preview = _changeset_preview(staged)
@@ -862,6 +867,7 @@ def _pause_grant(
     token = _save_pending({
         "history": history,
         "system": system,
+        "system_lean": system_lean,
         "tool_calls": tool_calls,
         "tool_results": tool_results,
         "steps": steps,
@@ -1021,10 +1027,10 @@ def run_code(
         except Exception:
             pass
 
-    system = (
+    orient_full = workspace_orient_block()
+    base = (
         code_role()
         + _shared_contract_snippet()
-        + workspace_orient_block()
         + "\n\n"
         + _tool_schema()
         + "\n\nWICHTIG: Wenn du ein Werkzeug brauchst, antworte NUR mit JSON "
@@ -1037,6 +1043,11 @@ def run_code(
             else ""
         )
     )
+    # Runde 1: volle Orient-Map (Blind-Walk vermeiden). Folge-Runden: ohne Map,
+    # damit der System-Prompt schlank bleibt (spart ~5.9k Zeichen pro Call).
+    # Resume/pending: Orient wurde schon gesehen → lean.
+    system = orient_full + "\n\n" + base if orient_full else base
+    system_lean = base
     tool_calls = []
     tool_results = []
     steps = []
@@ -1060,6 +1071,7 @@ def run_code(
     auftrag_id = code_grants.begin_auftrag()
     return _loop(
         system=system,
+        system_lean=system_lean,
         history=history,
         tool_calls=tool_calls,
         tool_results=tool_results,
@@ -1084,6 +1096,7 @@ def _continue_from_state(
     args = state["pending_args"]
     history = state["history"]
     system = state["system"]
+    system_lean = state.get("system_lean")
     tool_calls = state["tool_calls"]
     tool_results = state["tool_results"]
     steps = state["steps"]
@@ -1131,6 +1144,7 @@ def _continue_from_state(
             }
         return _loop(
             system=system,
+            system_lean=system_lean,
             history=history,
             tool_calls=tool_calls,
             tool_results=tool_results,
@@ -1209,6 +1223,7 @@ def _continue_from_state(
         if not after_tool:
             return _loop(
                 system=system,
+            system_lean=system_lean,
                 history=history,
                 tool_calls=tool_calls,
                 tool_results=tool_results,
@@ -1253,6 +1268,7 @@ def _continue_from_state(
                 }
             return _loop(
                 system=system,
+            system_lean=system_lean,
                 history=history,
                 tool_calls=tool_calls,
                 tool_results=tool_results,
@@ -1272,6 +1288,7 @@ def _continue_from_state(
             return _pause_grant(
                 history=history,
                 system=system,
+            system_lean=system_lean,
                 tool_calls=tool_calls,
                 tool_results=tool_results,
                 steps=steps,
@@ -1353,6 +1370,7 @@ def _continue_from_state(
 
     return _loop(
         system=system,
+            system_lean=system_lean,
         history=history,
         tool_calls=tool_calls,
         tool_results=tool_results,
@@ -1386,6 +1404,7 @@ def _loop(
     staged=None,
     auftrag_id=None,
     written_roots=None,
+    system_lean=None,
 ):
     images = list(images or [])
     staged = list(staged or [])
@@ -1439,7 +1458,10 @@ def _loop(
 
     while rounds < max_rounds:
         rounds += 1
-        messages = [{"role": "system", "content": system}] + history
+        # Runde 1: voller System-Prompt (mit Orient-Map).
+        # Folge-Runden: lean (ohne Map) — Orient wurde schon gesehen, spart ~5.9k Z.
+        sys_prompt = system if rounds == 1 else (system_lean or system)
+        messages = [{"role": "system", "content": sys_prompt}] + history
         _emit({
             "type": "step",
             "action": "OpenRouter",
