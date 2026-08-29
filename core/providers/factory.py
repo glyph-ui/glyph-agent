@@ -52,6 +52,23 @@ def _resolve_hybrid_provider():
     return _make_direct()
 
 
+def _or_slug_or(primary, fallback):
+    """OpenRouter-tauglicher Primary-Slug.
+
+    Im openrouter-Modus MUSS das Modell ein OR-Slug sein (vendor/model).
+    Eine Direct-ID ohne Slash (deepseek-v4-flash-vision-exp) kann OpenRouter
+    nicht ansprechen → dann das Fallback-Modell als Primary nehmen, wenn es
+    ein OR-Slug ist. Sonst: Primary unverändert (führt zu klarem Fehler).
+    """
+    p = str(primary or "").strip()
+    fb = str(fallback or "").strip()
+    if p and "/" in p:
+        return p
+    if fb and "/" in fb:
+        return fb
+    return p or "deepseek/deepseek-v4-flash-0731"
+
+
 def _make_openrouter():
     mode = str(getattr(config, "MODE", "agent") or "agent").lower()
     if mode == "openrouter-chat":
@@ -66,6 +83,12 @@ def _make_openrouter():
         fb = _config_fallback(
             "AGENT_OPENROUTER_FALLBACK_MODEL", "OPENROUTER_FALLBACK_MODEL"
         )
+    # Nur-OpenRouter-Modus: Direct-ID auf OR-Slug mappen, sonst 404/400.
+    if mode != "openrouter-chat":
+        mapped = _or_slug_or(primary, fb)
+        if mapped != primary:
+            primary = mapped
+            fb = None
     return OpenRouterProvider(model=primary, fallback_model=fb)
 
 

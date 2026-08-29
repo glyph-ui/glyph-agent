@@ -515,6 +515,14 @@ def _is_self_id_question(text):
 def _self_id_facts():
     """Runtime-Fakten für Self-ID — das Modell formuliert selbst, kein Template."""
     try:
+        from . import runtime_models as _rm
+
+        agent_mode = _rm._provider_for("agent")
+        eff = _rm.effective_provider("agent")
+    except Exception:
+        agent_mode = "hybrid"
+        eff = "direct"
+    try:
         p = llm.get_provider("agent")
         pname = getattr(p, "provider_name", "openrouter")
         primary = getattr(p, "model", None) or getattr(
@@ -533,9 +541,16 @@ def _self_id_facts():
         )
         active = primary
         last = None
+    # Anzeige ehrlich: Modus + effektiver Hop + tatsächlich aktives Modell.
+    mode_word = {"direct": "Direct", "openrouter": "nur OpenRouter", "hybrid": "Hybrid"}.get(
+        agent_mode, agent_mode
+    )
     return {
         "profile": "glyph-agent",
         "provider": pname,
+        "provider_mode": agent_mode,
+        "provider_mode_label": mode_word,
+        "effective_provider": eff,
         "primary_model": primary,
         "fallback_model": fallback,
         "active_model": active,

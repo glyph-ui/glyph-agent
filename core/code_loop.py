@@ -28,23 +28,26 @@ _PENDING = {}  # token -> state dict
 _PENDING_TTL_S = 15 * 60
 
 
-def code_denker_label():
-    """Lesbares Denker-Label aus dem konfigurierten CODE_OPENROUTER_MODEL.
-    Nicht hart verdrahtet — folgt der tatsächlichen Konfig (dynamisch)."""
-    raw = str(getattr(config, "CODE_OPENROUTER_MODEL", "") or "").strip()
-    base = raw.rsplit("/", 1)[-1].lower()
-    base = base.split(":")[0]
+def code_denker_label_for(raw):
+    """Lesbares Label aus einer konkreten Modell-ID (auch OR-Slug)."""
+    s = str(raw or "").strip()
+    base = s.rsplit("/", 1)[-1].lower().split(":")[0]
     if "gemini" in base:
         return "Google Gemini Flash"
     if "vision" in base and "deepseek" in base:
         return "DeepSeek V4 Vision"
     if "deepseek" in base or base.startswith("deepseek-") or base.startswith("v4"):
         return "DeepSeek V4 Flash"
-    if raw:
-        # z.B. openai/gpt-4o → GPT-4o; anthropic/claude → Claude …
+    if s:
         label = base.split("-")[0]
-        return (label or raw).title()
+        return (label or s).title()
     return "DeepSeek V4 Flash"
+
+
+def code_denker_label():
+    """Lesbares Denker-Label aus dem konfigurierten CODE_OPENROUTER_MODEL.
+    Nicht hart verdrahtet — folgt der tatsächlichen Konfig (dynamisch)."""
+    return code_denker_label_for(getattr(config, "CODE_OPENROUTER_MODEL", "") or "")
 
 
 def code_role():
@@ -55,6 +58,22 @@ def code_role():
     route = "OpenRouter" if "/" in str(model) else "Direct"
     fb = str(fallback).strip()
     fb_txt = f", Fallback {fb}" if fb else ""
+    # Effektiver Denker im Nur-OpenRouter-Modus: Direct-ID wird auf den
+    # OR-Slug gemappt (Factory _or_slug_or) — dem Modell die Wahrheit sagen.
+    try:
+        from . import runtime_models as _rm
+        from .providers import factory as _factory
+
+        if _rm._provider_for("code") == "openrouter":
+            mapped = _factory._or_slug_or(model, fb)
+            if mapped and mapped != model:
+                model = mapped
+                route = "OpenRouter"
+                denker = code_denker_label_for(mapped)
+                fb = ""
+                fb_txt = ""
+    except Exception:
+        pass
     return (
         "Du bist ^_Code: ein Code-Agent in Glyph. Denker: "
         f"{denker} ({model}) {route}{fb_txt}. "
