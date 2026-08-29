@@ -95,7 +95,7 @@ def _build_trace(tool_calls, tool_results=None, fallback_used=None, steps=None):
     steps: chronologische Kurzliste [{step, status, detail?}, ...] für die UI.
     """
     try:
-        provider = llm.get_provider()
+        provider = llm.get_provider("agent")
         pname = getattr(provider, "provider_name", "?")
         mname = getattr(provider, "model_name", "?")
         active = getattr(provider, "_active_model", None)
@@ -515,7 +515,7 @@ def _is_self_id_question(text):
 def _self_id_facts():
     """Runtime-Fakten für Self-ID — das Modell formuliert selbst, kein Template."""
     try:
-        p = llm.get_provider()
+        p = llm.get_provider("agent")
         pname = getattr(p, "provider_name", "openrouter")
         primary = getattr(p, "model", None) or getattr(
             config, "AGENT_OPENROUTER_MODEL", "deepseek-v4-flash-vision-exp"
@@ -917,7 +917,7 @@ def run(
         if parsed is None:
             # Kein Tool-Call: Direkt-Final ODER Zwischenprosa vor Single-Call-Final.
             try:
-                p = llm.get_provider()
+                p = llm.get_provider("agent")
                 steps.append({
                     "step": "LLM",
                     "status": "success",
@@ -1817,7 +1817,7 @@ def _fmt_tool_results(tool_results):
 
     # Datenschutz-Schranke: Kürzt Kontext vor Cloud-Übergabe (OpenRouter).
     # Jobs (core.jobs) dürfen per ContextVar eine höhere Grenze setzen.
-    provider = getattr(llm.get_provider(), "provider_name", "openrouter")
+    provider = getattr(llm.get_provider("agent"), "provider_name", "openrouter")
     if provider in ("openrouter", "fallback", "direct"):
         try:
             from . import jobs as _jobs
@@ -1936,7 +1936,7 @@ def _call_llm(messages, extra_system=None, images=None):
     if images:
         from .providers.openrouter import user_content_with_images
         user_payload = user_content_with_images(user_body, images)
-        p = llm.get_provider()
+        p = llm.get_provider("agent")
         old_fb = getattr(p, "fallback_model", None)
         try:
             # Flash-0731 / Pro ohne Vision: 400. Bilder nur am Vision-Hop.

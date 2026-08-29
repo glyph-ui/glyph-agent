@@ -98,16 +98,19 @@ def test_apply_direct_replaces_live_key():
     os.environ["DIRECT_API_KEY"] = "old-key-73c9"
     os.environ["DIRECT_API_URL"] = "https://api.deepseek.com"
     os.environ["OPENROUTER_API_KEY"] = "old-or-9199"
+    config.AGENT_PROVIDER = "direct"
+    config.CODE_PROVIDER = "direct"
     config.PROVIDER = "direct"
+    config.AGENT_PRIMARY_PROVIDER = "direct"
     factory.reset_provider()
-    stale = factory.get_provider()
+    stale = factory.get_provider("agent")
     assert stale.provider_name == "direct"
     assert stale.api_key == "old-key-73c9"
 
     snap = runtime_models.apply_direct(
         {"api_key": "new-key-3e4e", "openrouter_key": "new-or-0001"}
     )
-    live = factory.get_provider()
+    live = factory.get_provider("agent")
     assert live is not stale
     assert live.api_key == "new-key-3e4e"
     assert os.environ.get("DIRECT_API_KEY") == "new-key-3e4e"
@@ -166,7 +169,7 @@ def test_hybrid_peak_hop():
         )
         factory.reset_provider()
         snap = runtime_models.apply_provider({"provider": "hybrid"})
-        p = factory.get_provider()
+        p = factory.get_provider("agent")
         assert snap["provider"] == "openrouter", snap["provider"]
         assert snap["provider_peak"] is True
         assert p.provider_name == "openrouter"
@@ -176,6 +179,39 @@ def test_hybrid_peak_hop():
         else:
             os.environ["HYBRID_PEAK_WINDOWS"] = old
         factory.reset_provider()
+
+
+def test_provider_per_kind():
+    """Agent und Code können getrennte Provider-Modi haben."""
+    factory.reset_provider()
+    # Agent → openrouter, Code → hybrid
+    runtime_models.apply_provider({"provider": "openrouter", "kind": "agent"})
+    runtime_models.apply_provider({"provider": "hybrid", "kind": "code"})
+    assert config.AGENT_PROVIDER == "openrouter"
+    assert config.CODE_PROVIDER == "hybrid"
+    snap = runtime_models.current_models_snapshot()
+    assert snap["provider_mode"] == "openrouter"
+    assert snap["code_provider_mode"] == "hybrid"
+    # Effektive Hops
+    assert snap["provider"] == "openrouter"
+    assert snap["code_provider"] in ("direct", "openrouter")
+    # Singletons getrennt
+    pa = factory.get_provider("agent")
+    pc = factory.get_provider("code")
+    assert pa.provider_name == "openrouter"
+    assert pc.provider_name in ("direct", "openrouter")
+
+
+def test_provider_code_only_keeps_agent():
+    """Nur Code wechseln lässt Agent-Modus unverändert."""
+    factory.reset_provider()
+    runtime_models.apply_provider({"provider": "openrouter", "kind": "agent"})
+    runtime_models.apply_provider({"provider": "direct", "kind": "code"})
+    assert config.AGENT_PROVIDER == "openrouter"
+    assert config.CODE_PROVIDER == "direct"
+    snap = runtime_models.current_models_snapshot()
+    assert snap["provider_mode"] == "openrouter"
+    assert snap["code_provider_mode"] == "direct"
 
 
 if __name__ == "__main__":
@@ -189,4 +225,6 @@ if __name__ == "__main__":
     test_apply_provider_hybrid_is_direct()
     test_provider_invalid()
     test_hybrid_peak_hop()
+    test_provider_per_kind()
+    test_provider_code_only_keeps_agent()
     print("ok")

@@ -515,12 +515,15 @@ def _handle_models_post(payload):
     else:
         snap = runtime_models.current_models_snapshot()
     # Provider-Modus (direct | openrouter | hybrid) hot-applyen
+    # kind=code → nur ^_Code, sonst °_Agent
     if isinstance(body.get("provider"), str) and body["provider"].strip():
         snap = runtime_models.apply_provider(
-            {"provider": body["provider"]}
+            {"provider": body["provider"], "kind": body.get("kind") or "agent"}
         )
     elif isinstance(body.get("mode"), str) and body["mode"].strip():
-        snap = runtime_models.apply_provider({"provider": body["mode"]})
+        snap = runtime_models.apply_provider(
+            {"provider": body["mode"], "kind": body.get("kind") or "agent"}
+        )
     return {"ok": True, "models": snap, **_handle_health()}
 
 
@@ -529,12 +532,13 @@ def _handle_models_probe(payload):
 
     body = payload or {}
     model = body.get("model") or body.get("primary") or ""
+    kind = str(body.get("kind") or "agent").lower()
     timeout = body.get("timeout")
     try:
         timeout_i = int(timeout) if timeout is not None else 45
     except (TypeError, ValueError):
         timeout_i = 45
-    result = runtime_models.probe_model(str(model), timeout=timeout_i)
+    result = runtime_models.probe_model(str(model), timeout=timeout_i, kind=kind)
     # Attach context_length hint from OpenRouter public catalog when possible
     try:
         import urllib.request

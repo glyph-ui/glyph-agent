@@ -527,7 +527,7 @@ def _call_code_llm(messages, temperature=0.2, images=None):
     images: optionale OpenAI image_url-Parts. Flash-0731/Pro ohne Vision → 400,
     daher bei Bildern kein Fallback auf ein Nicht-Vision-Modell.
     """
-    provider = llm.get_provider()
+    provider = llm.get_provider("code")
     primary = (
         getattr(config, "CODE_OPENROUTER_MODEL", None)
         or "deepseek-v4-flash-vision-exp"
@@ -649,7 +649,7 @@ def os_environ_int(name, default):
 
 def _build_trace(tool_calls, tool_results=None, steps=None, model=None):
     try:
-        provider = llm.get_provider()
+        provider = llm.get_provider("code")
         pname = getattr(provider, "provider_name", "openrouter")
         mname = model or getattr(provider, "_active_model", None) or getattr(
             config, "CODE_OPENROUTER_MODEL", "deepseek-v4-flash-vision-exp"
@@ -1533,7 +1533,7 @@ def _loop(
             steps.append({"step": "answer", "status": "success", "detail": f"{len(answer)} Zeichen"})
             log.log("code_reply", rounds=rounds, direct=True, chars=len(answer))
             try:
-                p = llm.get_provider()
+                p = llm.get_provider("code")
                 active = getattr(p, "_active_model", None) or model_name
             except Exception:
                 active = model_name

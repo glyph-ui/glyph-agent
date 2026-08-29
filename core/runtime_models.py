@@ -41,13 +41,33 @@ def _norm_provider(value: Any) -> str:
     return PROVIDER_ALIASES.get(raw, raw)
 
 
-def effective_provider() -> str:
-    """Effektiver Hop für den aktuellen Zeitpunkt.
+def _provider_for(kind: str) -> str:
+    """Gewählter Provider-Modus für einen Kopf (agent|code).
+
+    Reihenfolge: CODE_PROVIDER / AGENT_PROVIDER → globaler PROVIDER → Default.
+    """
+    if kind == "code":
+        raw = _norm_id(getattr(config, "CODE_PROVIDER", None))
+        if raw:
+            return _norm_provider(raw)
+    else:
+        raw = _norm_id(getattr(config, "AGENT_PROVIDER", None))
+        if raw:
+            return _norm_provider(raw)
+    raw = _norm_id(getattr(config, "AGENT_PRIMARY_PROVIDER", None))
+    if raw:
+        return _norm_provider(raw)
+    raw = _norm_id(getattr(config, "PROVIDER", "hybrid"))
+    return _norm_provider(raw)
+
+
+def effective_provider(kind: str = "agent") -> str:
+    """Effektiver Hop für einen Kopf (agent|code) zum aktuellen Zeitpunkt.
 
     hybrid → direct (off-peak) oder openrouter (Peak).
     direct/openrouter → unverändert.
     """
-    mode = active_provider()
+    mode = _provider_for(kind)
     if mode != "hybrid":
         return mode
     try:
@@ -61,11 +81,8 @@ def effective_provider() -> str:
 
 
 def active_provider() -> str:
-    """Current configured provider mode (direct|openrouter|hybrid)."""
-    raw = _norm_id(getattr(config, "AGENT_PRIMARY_PROVIDER", None))
-    if not raw:
-        raw = _norm_id(getattr(config, "PROVIDER", "direct"))
-    return _norm_provider(raw)
+    """Current configured provider mode (direct|openrouter|hybrid) — Agent-Kopf."""
+    return _provider_for("agent")
 
 
 def _is_peak_now() -> bool:
@@ -82,7 +99,8 @@ def apply_provider(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Hot-apply the active provider mode + rebuild the singleton.
 
     Body shape:
-      {"provider": "direct" | "openrouter" | "hybrid" | "fallback"}
+      {"provider": "direct" | "openrouter" | "hybrid" | "fallback",
+       "kind": "agent" | "code"}   # kind optional, Default agent
 
     Semantics:
       direct     → Direct-API (Primary) ohne Fallback
@@ -90,8 +108,9 @@ def apply_provider(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
       hybrid     → Direct primär, OpenRouter als Fallback  (Default)
       fallback   → Alias für openrouter
 
-    Sets config.PROVIDER + config.AGENT_PRIMARY_PROVIDER and rebuilds the
-    provider singleton so the next /chat uses the new hop.
+    kind=agent → setzt AGENT_PROVIDER (+ globalen PROVIDER als Fallback)
+    kind=code  → setzt CODE_PROVIDER (Code-Kopf unabhängig)
+    Rebuilds the provider singleton so the next /chat uses the new hop.
     """
     body = payload if isinstance(payload, dict) else {}
     raw = _norm_id(body.get("provider") or body.get("mode"))
@@ -102,12 +121,19 @@ def apply_provider(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         raise ValueError(
             f"Unbekannter Provider: {raw!r} (erlaubt: direct, openrouter, hybrid, fallback)"
         )
-    config.AGENT_PRIMARY_PROVIDER = mode
-    config.PROVIDER = mode
-    _set_env("AGENT_PRIMARY_PROVIDER", mode)
+    kind = _norm_id(body.get("kind") or "agent").lower()
+    if kind == "code":
+        config.CODE_PROVIDER = mode
+        _set_env("CODE_PROVIDER", mode)
+    else:
+        config.AGENT_PROVIDER = mode
+        config.AGENT_PRIMARY_PROVIDER = mode
+        config.PROVIDER = mode
+        _set_env("AGENT_PROVIDER", mode)
+        _set_env("AGENT_PRIMARY_PROVIDER", mode)
     factory.reset_provider()
     try:
-        llm.get_provider()
+        llm.get_provider(kind)
     except Exception:
         pass
     return current_models_snapshot()
@@ -167,9 +193,11 @@ def current_models_snapshot() -> Dict[str, Any]:
             "provider": getattr(p, "provider_name", None) if p else None,
             "label": getattr(p, "model_name", None) if p else None,
         },
-        "provider": effective_provider(),
-        "provider_mode": _norm_id(getattr(config, "AGENT_PRIMARY_PROVIDER", "")),
+        "provider": effective_provider("agent"),
+        "provider_mode": _provider_for("agent"),
         "provider_peak": _is_peak_now(),
+        "code_provider": effective_provider("code"),
+        "code_provider_mode": _provider_for("code"),
         "code_model": code_primary,
         "code_fallback_model": code_fb,
         "direct": {
@@ -256,10 +284,10 @@ def apply_models(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 
     # Live provider (agent/openrouter-chat path)
     try:
-        p = llm.get_provider()
+        p = llm.get_provider("agent")
     except Exception:
         factory.reset_provider()
-        p = llm.get_provider()
+        p = llm.get_provider("agent")
 
     if p is not None:
         p.model = primary
@@ -268,6 +296,19 @@ def apply_models(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
             p._active_model = primary
         if hasattr(p, "last_used"):
             p.last_used = None
+
+    # Code-Singleton (falls schon erzeugt) ebenfalls aktualisieren
+    try:
+        pc = llm.get_provider("code")
+        if pc is not None:
+            pc.model = code_primary
+            pc.fallback_model = code_fallback
+            if hasattr(pc, "_active_model"):
+                pc._active_model = code_primary
+            if hasattr(pc, "last_used"):
+                pc.last_used = None
+    except Exception:
+        pass
 
     return current_models_snapshot()
 
@@ -306,7 +347,11 @@ def apply_direct(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 
     factory.reset_provider()
     try:
-        llm.get_provider()
+        llm.get_provider("agent")
+    except Exception:
+        pass
+    try:
+        llm.get_provider("code")
     except Exception:
         pass
 
@@ -321,7 +366,7 @@ def apply_direct(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return snap
 
 
-def probe_model(model_id: str, timeout: int = 45) -> Dict[str, Any]:
+def probe_model(model_id: str, timeout: int = 45, kind: str = "agent") -> Dict[str, Any]:
     """
     Minimal OpenRouter chat with the given model id (production key/URL path).
     Does not permanently change the active model.
@@ -330,7 +375,7 @@ def probe_model(model_id: str, timeout: int = 45) -> Dict[str, Any]:
     if not mid:
         raise ValueError("model ist Pflicht")
 
-    p = llm.get_provider()
+    p = llm.get_provider(kind)
     if getattr(p, "provider_name", "") not in ("openrouter", "fallback", "direct"):
         raise RuntimeError(f"Probe nur für Direct/OpenRouter, aktiv: {getattr(p, 'provider_name', '?')}")
 

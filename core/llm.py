@@ -16,9 +16,14 @@ Diese Datei darf KEINE provider-spezifische Logik enthalten.
 from .providers import factory
 
 
-def get_provider():
-    """Liefert den aktiven ModelProvider (für Logs/UI-Info)."""
-    return factory.get_provider()
+def get_provider(kind="agent"):
+    """Liefert den aktiven ModelProvider (für Logs/UI-Info).
+
+    kind="code" → Provider, der für ^_Code aufgelöst wird (CODE_PROVIDER),
+    sonst der Agent-Provider (AGENT_PROVIDER). Der Singleton wird pro kind
+    gehalten, damit °_Agent und ^_Code getrennte Provider-Modi haben können.
+    """
+    return factory.get_provider(kind)
 
 
 def short_model_label(model_id):
@@ -72,11 +77,11 @@ def thinker_step_detail(kind="agent", model=None):
     return f"{prefix} denkt ({short_model_label(used)})"
 
 
-def chat(system, user, temperature=0.3, num_ctx=8192):
+def chat(system, user, temperature=0.3, num_ctx=8192, kind="agent"):
     """Chat-Aufruf an den aktiven Provider. Liefert Antworttext (str)."""
-    return factory.get_provider().chat(system, user, temperature, num_ctx)
+    return factory.get_provider(kind).chat(system, user, temperature, num_ctx)
 
 
-def generate(prompt, temperature=0.3, num_ctx=8192):
+def generate(prompt, temperature=0.3, num_ctx=8192, kind="agent"):
     """Freier Generierungs-Aufruf an den aktiven Provider. Liefert str."""
-    return factory.get_provider().generate(prompt, temperature, num_ctx)
+    return factory.get_provider(kind).generate(prompt, temperature, num_ctx)

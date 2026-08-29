@@ -77,29 +77,44 @@ _PROVIDERS = {
     "fallback": lambda: FallbackProvider(),
 }
 
-_singleton = None
+_singletons = {}
 
 
-def get_provider():
+def _resolve_provider_name(kind="agent"):
+    """Provider-Name für einen Kopf (agent|code)."""
+    try:
+        from .. import runtime_models as _rm
+
+        return _rm._provider_for(kind)
+    except Exception:
+        pass
+    name = getattr(config, "PROVIDER", "hybrid") or "hybrid"
+    if name == "ollama":
+        name = "direct"
+    return name
+
+
+def get_provider(kind="agent"):
     """
-    Liefert den aktiven ModelProvider (Singleton).
-    Auswahl über config.PROVIDER ('direct' | 'openrouter' | 'fallback' | 'mlx').
+    Liefert den aktiven ModelProvider (Singleton pro kind).
+    Auswahl über config.PROVIDER / CODE_PROVIDER ('direct' | 'openrouter' | 'hybrid' | 'mlx').
     Unbekannt → direct (B+-Default).
     """
-    global _singleton
-    if _singleton is None:
-        name = getattr(config, "PROVIDER", "direct") or "direct"
+    kind = str(kind or "agent").lower()
+    if kind not in ("agent", "code"):
+        kind = "agent"
+    if _singletons.get(kind) is None:
+        name = _resolve_provider_name(kind)
         # Veralteter Name "ollama" als Chat-Provider: hart auf direct umbiegen.
         if name == "ollama":
             name = "direct"
         factory = _PROVIDERS.get(name)
         if factory is None:
             raise ValueError(f"Unbekannte Provider-Konfiguration: {name}")
-        _singleton = factory()
-    return _singleton
+        _singletons[kind] = factory()
+    return _singletons[kind]
 
 
 def reset_provider():
-    """Setzt den Singleton zurück (Tests / Provider-Wechsel zur Laufzeit)."""
-    global _singleton
-    _singleton = None
+    """Setzt die Singletons zurück (Tests / Provider-Wechsel zur Laufzeit)."""
+    _singletons.clear()
