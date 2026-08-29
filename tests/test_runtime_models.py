@@ -116,10 +116,54 @@ def test_apply_direct_replaces_live_key():
     assert snap["direct"]["key_set"] is True
 
 
+def test_provider_alias_normalization():
+    assert runtime_models._norm_provider("direct") == "direct"
+    assert runtime_models._norm_provider("openrouter") == "openrouter"
+    assert runtime_models._norm_provider("hybrid") == "direct"
+    assert runtime_models._norm_provider("fallback") == "openrouter"
+    assert runtime_models._norm_provider("HyBrId") == "direct"
+    assert runtime_models._norm_provider("DeePSeek") == "deepseek"
+
+
+def test_apply_provider_openrouter():
+    factory.reset_provider()
+    importlib.reload(config)
+    importlib.reload(factory)
+    importlib.reload(runtime_models)
+    snap = runtime_models.apply_provider({"provider": "openrouter"})
+    assert snap["provider"] == "openrouter"
+    assert config.AGENT_PRIMARY_PROVIDER == "openrouter"
+    assert config.PROVIDER == "openrouter"
+    p = factory.get_provider()
+    assert p.provider_name == "openrouter"
+
+
+def test_apply_provider_hybrid_is_direct():
+    factory.reset_provider()
+    snap = runtime_models.apply_provider({"provider": "hybrid"})
+    assert snap["provider"] == "direct"
+    assert config.AGENT_PRIMARY_PROVIDER == "direct"
+    p = factory.get_provider()
+    assert p.provider_name == "direct"
+
+
+def test_apply_provider_invalid():
+    try:
+        runtime_models.apply_provider({"provider": "mlx"})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("mlx darf nicht akzeptiert werden")
+
+
 if __name__ == "__main__":
     test_apply_shared_and_clear_fallback()
     test_code_override()
     test_apply_vision_sets_code_vision_model()
     test_apply_direct_url()
     test_apply_direct_replaces_live_key()
+    test_provider_alias_normalization()
+    test_apply_provider_openrouter()
+    test_apply_provider_hybrid_is_direct()
+    test_apply_provider_invalid()
     print("ok")

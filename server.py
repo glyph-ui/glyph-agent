@@ -514,6 +514,13 @@ def _handle_models_post(payload):
         snap = runtime_models.apply_models(body)
     else:
         snap = runtime_models.current_models_snapshot()
+    # Provider-Modus (direct | openrouter | hybrid) hot-applyen
+    if isinstance(body.get("provider"), str) and body["provider"].strip():
+        snap = runtime_models.apply_provider(
+            {"provider": body["provider"]}
+        )
+    elif isinstance(body.get("mode"), str) and body["mode"].strip():
+        snap = runtime_models.apply_provider({"provider": body["mode"]})
     return {"ok": True, "models": snap, **_handle_health()}
 
 

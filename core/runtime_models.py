@@ -27,6 +27,63 @@ def _norm_fallback(value: Any, *, present: bool) -> Optional[str]:
     return s or None
 
 
+PROVIDER_ALIASES = {
+    "direct": "direct",
+    "openrouter": "openrouter",
+    "fallback": "openrouter",  # alter Alias: nur OpenRouter
+    "hybrid": "direct",        # Direct primär → OpenRouter-Fallback
+}
+
+
+def _norm_provider(value: Any) -> str:
+    """Normalize a provider id to a factory-known name (direct|openrouter)."""
+    raw = _norm_id(value).lower()
+    return PROVIDER_ALIASES.get(raw, raw)
+
+
+def active_provider() -> str:
+    """Current effective provider name (direct|openrouter)."""
+    raw = _norm_id(getattr(config, "AGENT_PRIMARY_PROVIDER", None))
+    if not raw:
+        raw = _norm_id(getattr(config, "PROVIDER", "direct"))
+    return _norm_provider(raw)
+
+
+def apply_provider(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Hot-apply the active provider mode + rebuild the singleton.
+
+    Body shape:
+      {"provider": "direct" | "openrouter" | "hybrid" | "fallback"}
+
+    Semantics:
+      direct     → Direct-API (Primary) ohne Fallback
+      openrouter → nur OpenRouter
+      hybrid     → Direct primär, OpenRouter als Fallback  (Default)
+      fallback   → Alias für openrouter
+
+    Sets config.PROVIDER + config.AGENT_PRIMARY_PROVIDER and rebuilds the
+    provider singleton so the next /chat uses the new hop.
+    """
+    body = payload if isinstance(payload, dict) else {}
+    raw = _norm_id(body.get("provider") or body.get("mode"))
+    if not raw:
+        return current_models_snapshot()
+    mode = _norm_provider(raw)
+    if mode not in ("direct", "openrouter"):
+        raise ValueError(
+            f"Unbekannter Provider: {raw!r} (erlaubt: direct, openrouter, hybrid, fallback)"
+        )
+    config.AGENT_PRIMARY_PROVIDER = mode
+    config.PROVIDER = mode
+    _set_env("AGENT_PRIMARY_PROVIDER", mode)
+    factory.reset_provider()
+    try:
+        llm.get_provider()
+    except Exception:
+        pass
+    return current_models_snapshot()
+
+
 def current_models_snapshot() -> Dict[str, Any]:
     """Structured model state for /health and apply responses."""
     agent_primary = _norm_id(
@@ -81,6 +138,8 @@ def current_models_snapshot() -> Dict[str, Any]:
             "provider": getattr(p, "provider_name", None) if p else None,
             "label": getattr(p, "model_name", None) if p else None,
         },
+        "provider": active_provider(),
+        "provider_mode": _norm_id(getattr(config, "AGENT_PRIMARY_PROVIDER", "")),
         "code_model": code_primary,
         "code_fallback_model": code_fb,
         "direct": {
