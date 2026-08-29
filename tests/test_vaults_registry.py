@@ -29,6 +29,16 @@ class VaultsRegistryTest(unittest.TestCase):
         self._orig_defaults = vr.DEFAULTS_STORE
         self._old_paths = list(config.VAULT_PATHS)
         self._old_path = config.VAULT_PATH
+        # Workspace-Registry isolieren (paths_for_agent() liest auch wr)
+        import core.workspaces_registry as _wr
+
+        self._wr = _wr
+        self._orig_wr_dir = _wr.GLYPH_DIR
+        self._orig_wr_store = _wr.USER_STORE
+        _wr.GLYPH_DIR = self.root
+        _wr.USER_STORE = os.path.join(self.root, "workspaces.json")
+        with open(_wr.USER_STORE, "w", encoding="utf-8") as f:
+            json.dump({"version": 1, "workspaces": []}, f)
         vr.GLYPH_DIR = self.root
         vr.USER_STORE = self.store
         vr.DEFAULTS_STORE = os.path.join(self.root, "vaults.defaults.json")
@@ -40,6 +50,8 @@ class VaultsRegistryTest(unittest.TestCase):
         self.vr.GLYPH_DIR = self._orig_dir
         self.vr.USER_STORE = self._orig_store
         self.vr.DEFAULTS_STORE = self._orig_defaults
+        self._wr.GLYPH_DIR = self._orig_wr_dir
+        self._wr.USER_STORE = self._orig_wr_store
         config.VAULT_PATHS = self._old_paths
         config.VAULT_PATH = self._old_path
         bind_store._mtime_cache.clear()
