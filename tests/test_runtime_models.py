@@ -119,9 +119,9 @@ def test_apply_direct_replaces_live_key():
 def test_provider_alias_normalization():
     assert runtime_models._norm_provider("direct") == "direct"
     assert runtime_models._norm_provider("openrouter") == "openrouter"
-    assert runtime_models._norm_provider("hybrid") == "direct"
+    assert runtime_models._norm_provider("hybrid") == "hybrid"
     assert runtime_models._norm_provider("fallback") == "openrouter"
-    assert runtime_models._norm_provider("HyBrId") == "direct"
+    assert runtime_models._norm_provider("HyBrId") == "hybrid"
     assert runtime_models._norm_provider("DeePSeek") == "deepseek"
 
 
@@ -141,19 +141,41 @@ def test_apply_provider_openrouter():
 def test_apply_provider_hybrid_is_direct():
     factory.reset_provider()
     snap = runtime_models.apply_provider({"provider": "hybrid"})
-    assert snap["provider"] == "direct"
-    assert config.AGENT_PRIMARY_PROVIDER == "direct"
+    assert snap["provider_mode"] == "hybrid"
+    # Effektiver Hop hängt von der Uhrzeit ab (Peak→openrouter, sonst direct)
+    assert snap["provider"] in ("direct", "openrouter")
     p = factory.get_provider()
-    assert p.provider_name == "direct"
+    assert p.provider_name in ("direct", "openrouter")
 
 
-def test_apply_provider_invalid():
+def test_provider_invalid():
     try:
         runtime_models.apply_provider({"provider": "mlx"})
     except ValueError:
         pass
     else:
         raise AssertionError("mlx darf nicht akzeptiert werden")
+
+
+def test_hybrid_peak_hop():
+    """Hybrid + Peak-Fenster (simuliert) → effektiver Hop = openrouter."""
+    old = os.environ.get("HYBRID_PEAK_WINDOWS")
+    try:
+        os.environ["HYBRID_PEAK_WINDOWS"] = (
+            '{"utc": [[0, 24]], "weekdays": [0,1,2,3,4,5,6]}'
+        )
+        factory.reset_provider()
+        snap = runtime_models.apply_provider({"provider": "hybrid"})
+        p = factory.get_provider()
+        assert snap["provider"] == "openrouter", snap["provider"]
+        assert snap["provider_peak"] is True
+        assert p.provider_name == "openrouter"
+    finally:
+        if old is None:
+            os.environ.pop("HYBRID_PEAK_WINDOWS", None)
+        else:
+            os.environ["HYBRID_PEAK_WINDOWS"] = old
+        factory.reset_provider()
 
 
 if __name__ == "__main__":
@@ -165,5 +187,6 @@ if __name__ == "__main__":
     test_provider_alias_normalization()
     test_apply_provider_openrouter()
     test_apply_provider_hybrid_is_direct()
-    test_apply_provider_invalid()
+    test_provider_invalid()
+    test_hybrid_peak_hop()
     print("ok")

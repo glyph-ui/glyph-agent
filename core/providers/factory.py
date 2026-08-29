@@ -35,6 +35,23 @@ def _make_direct():
     )
 
 
+def _resolve_hybrid_provider():
+    """Hybrid: Direct primär, OpenRouter als Reserve.
+
+    Zeitbewusst: während konfigurierter Peak-Fenster (Standard: DeepSeek
+    Mo–Fr 01–04 & 06–10 UTC) wird OpenRouter als Primär genommen, weil
+    Direct dort teurer ist als der OpenRouter-Preis. Außerhalb → Direct.
+    """
+    try:
+        from .. import peak as _peak
+
+        if _peak.is_peak():
+            return _make_openrouter()
+    except Exception:
+        pass
+    return _make_direct()
+
+
 def _make_openrouter():
     mode = str(getattr(config, "MODE", "agent") or "agent").lower()
     if mode == "openrouter-chat":
@@ -56,6 +73,7 @@ _PROVIDERS = {
     "mlx": lambda: MLXProvider(),
     "direct": _make_direct,
     "openrouter": _make_openrouter,
+    "hybrid": _resolve_hybrid_provider,
     "fallback": lambda: FallbackProvider(),
 }
 

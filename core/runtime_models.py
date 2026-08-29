@@ -31,22 +31,51 @@ PROVIDER_ALIASES = {
     "direct": "direct",
     "openrouter": "openrouter",
     "fallback": "openrouter",  # alter Alias: nur OpenRouter
-    "hybrid": "direct",        # Direct primär → OpenRouter-Fallback
+    "hybrid": "hybrid",        # zeitbewusst: Direct ↔ OpenRouter
 }
 
 
 def _norm_provider(value: Any) -> str:
-    """Normalize a provider id to a factory-known name (direct|openrouter)."""
+    """Normalize a provider id to a factory-known name (direct|openrouter|hybrid)."""
     raw = _norm_id(value).lower()
     return PROVIDER_ALIASES.get(raw, raw)
 
 
+def effective_provider() -> str:
+    """Effektiver Hop für den aktuellen Zeitpunkt.
+
+    hybrid → direct (off-peak) oder openrouter (Peak).
+    direct/openrouter → unverändert.
+    """
+    mode = active_provider()
+    if mode != "hybrid":
+        return mode
+    try:
+        from . import peak as _peak
+
+        if _peak.is_peak():
+            return "openrouter"
+    except Exception:
+        pass
+    return "direct"
+
+
 def active_provider() -> str:
-    """Current effective provider name (direct|openrouter)."""
+    """Current configured provider mode (direct|openrouter|hybrid)."""
     raw = _norm_id(getattr(config, "AGENT_PRIMARY_PROVIDER", None))
     if not raw:
         raw = _norm_id(getattr(config, "PROVIDER", "direct"))
     return _norm_provider(raw)
+
+
+def _is_peak_now() -> bool:
+    """True, wenn gerade ein Peak-Fenster läuft (für Status/UI)."""
+    try:
+        from . import peak as _peak
+
+        return bool(_peak.is_peak())
+    except Exception:
+        return False
 
 
 def apply_provider(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -69,7 +98,7 @@ def apply_provider(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not raw:
         return current_models_snapshot()
     mode = _norm_provider(raw)
-    if mode not in ("direct", "openrouter"):
+    if mode not in ("direct", "openrouter", "hybrid"):
         raise ValueError(
             f"Unbekannter Provider: {raw!r} (erlaubt: direct, openrouter, hybrid, fallback)"
         )
@@ -138,8 +167,9 @@ def current_models_snapshot() -> Dict[str, Any]:
             "provider": getattr(p, "provider_name", None) if p else None,
             "label": getattr(p, "model_name", None) if p else None,
         },
-        "provider": active_provider(),
+        "provider": effective_provider(),
         "provider_mode": _norm_id(getattr(config, "AGENT_PRIMARY_PROVIDER", "")),
+        "provider_peak": _is_peak_now(),
         "code_model": code_primary,
         "code_fallback_model": code_fb,
         "direct": {
