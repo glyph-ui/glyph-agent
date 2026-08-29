@@ -426,9 +426,13 @@ class OpenRouterProvider(ModelProvider):
                 ) from e1
             self.last_used = "openrouter:free"
             self._active_model = self.fallback_model
-            return text.rstrip() + (
-                f"\n\n_(OpenRouter: kostenloses Modell {self.fallback_model} verwendet.)_"
-            )
+            # Nur bei echten :free-Modellen anhängen — glm-5.3-flash kostet
+            # Geld ($0.075/$0.25) und ist nur ein normaler Fallback-Hop.
+            if str(self.fallback_model or "").lower().endswith(":free"):
+                return text.rstrip() + (
+                    f"\n\n_(OpenRouter: kostenloses Modell {self.fallback_model} verwendet.)_"
+                )
+            return text
 
     def generate(self, prompt, temperature=0.3, num_ctx=8192, timeout=None):
         return self._with_free_fallback(
