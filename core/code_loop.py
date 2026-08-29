@@ -19,6 +19,7 @@ import time
 from . import config, llm, log, tool_registry
 from . import code_tools
 from . import code_grants
+from .tool_loop import _is_self_id_question, _run_self_id
 
 MAX_ROUNDS = getattr(config, "CODE_MAX_ROUNDS", 32) or 32
 
@@ -1045,6 +1046,10 @@ def run_code(
             )
         except Exception:
             pass
+
+    # Self-ID (^_Code): Identitäts-/Modell-Fragen ohne Tool-Loop beantworten.
+    if not images and _is_self_id_question(user_message):
+        return _run_self_id(user_message, kind="code")
 
     orient_full = workspace_orient_block()
     base = (

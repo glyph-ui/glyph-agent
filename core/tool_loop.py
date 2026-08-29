@@ -488,6 +488,10 @@ def _is_self_id_question(text):
         "was bist du für ein modell",
         "was bist du für ein model",
         "wer bist du",
+        "wer spricht",
+        "wer spricht hier",
+        "wer antwortet",
+        "wer bin ich hier",
         "who are you",
         "welche ki",
         "which ai",
@@ -512,25 +516,33 @@ def _is_self_id_question(text):
     return any(n in t for n in needles)
 
 
-def _self_id_facts():
+def _self_id_facts(kind="agent"):
     """Runtime-Fakten für Self-ID — das Modell formuliert selbst, kein Template."""
     try:
         from . import runtime_models as _rm
 
-        agent_mode = _rm._provider_for("agent")
-        eff = _rm.effective_provider("agent")
+        agent_mode = _rm._provider_for(kind)
+        eff = _rm.effective_provider(kind)
     except Exception:
         agent_mode = "hybrid"
         eff = "direct"
     try:
-        p = llm.get_provider("agent")
+        p = llm.get_provider(kind)
         pname = getattr(p, "provider_name", "openrouter")
-        primary = getattr(p, "model", None) or getattr(
-            config, "AGENT_OPENROUTER_MODEL", "deepseek-v4-flash-vision-exp"
-        )
-        fallback = getattr(p, "fallback_model", None) or getattr(
-            config, "AGENT_OPENROUTER_FALLBACK_MODEL", "deepseek/deepseek-v4-flash-0731"
-        )
+        if kind == "code":
+            primary = getattr(p, "model", None) or getattr(
+                config, "CODE_OPENROUTER_MODEL", "deepseek-v4-flash-vision-exp"
+            )
+            fallback = getattr(p, "fallback_model", None) or getattr(
+                config, "CODE_OPENROUTER_FALLBACK_MODEL", "deepseek/deepseek-v4-flash-0731"
+            )
+        else:
+            primary = getattr(p, "model", None) or getattr(
+                config, "AGENT_OPENROUTER_MODEL", "deepseek-v4-flash-vision-exp"
+            )
+            fallback = getattr(p, "fallback_model", None) or getattr(
+                config, "AGENT_OPENROUTER_FALLBACK_MODEL", "deepseek/deepseek-v4-flash-0731"
+            )
         active = getattr(p, "_active_model", None) or primary
         last = getattr(p, "last_used", None)
     except Exception:
@@ -545,8 +557,9 @@ def _self_id_facts():
     mode_word = {"direct": "Direct", "openrouter": "nur OpenRouter", "hybrid": "Hybrid"}.get(
         agent_mode, agent_mode
     )
+    profile = "^_Code" if kind == "code" else "glyph-agent"
     return {
-        "profile": "glyph-agent",
+        "profile": profile,
         "provider": pname,
         "provider_mode": agent_mode,
         "provider_mode_label": mode_word,
@@ -560,12 +573,14 @@ def _self_id_facts():
     }
 
 
-def _run_self_id(user_message):
+def _run_self_id(user_message, kind="agent"):
     """Self-ID: Runtime-Fakten + Cloud-Denker freestilt die Antwort. Kein Vault."""
     import json as _json
-    facts = _self_id_facts()
+    facts = _self_id_facts(kind)
+    is_code = kind == "code"
     system = (
-        "Du bist glyph-agent. Beantworte Identitäts-/Modell-Fragen und Follow-ups "
+        ("Du bist ^_Code, der Code-Agent in Glyph. " if is_code else "Du bist glyph-agent. ")
+        + "Beantworte Identitäts-/Modell-Fragen und Follow-ups "
         "dazu freistil und natürlich — kein starres Template, keine Aufzählungs-Skript, "
         "kein 'steht nicht im Tool-Ergebnis', keine Vault-Quellenliste.\n"
         "Fakten aus der Runtime (einweben, nicht ablesen; weglassen was die Frage nicht braucht):\n"
@@ -573,14 +588,15 @@ def _run_self_id(user_message):
         "Ton: dem Nutzer anpassen (locker, knapp, witzig — was passt). Deutsch."
     )
     try:
-        answer = llm.chat(system, user_message, temperature=0.65)
+        answer = llm.chat(system, user_message, temperature=0.65, kind=kind)
     except Exception as e:
         # Harter Fallback nur bei Provider-Ausfall — absichtlich knapper Fließtext,
         # kein Template-Marketing.
         log.log("agent_self_id_llm_fail", error=str(e)[:200])
         answer = (
-            f"Ich laufe als glyph-agent über OpenRouter "
-            f"({facts['primary_model']}; Free-Fallback {facts['fallback_model']}). "
+            f"Ich laufe als {'^_Code' if is_code else 'glyph-agent'} über "
+            f"{facts['provider_mode_label']} "
+            f"({facts['primary_model']}; Fallback {facts['fallback_model']}). "
             f"Das kommt aus der Runtime-Config, nicht aus deinen Notizen."
         )
     steps = [
