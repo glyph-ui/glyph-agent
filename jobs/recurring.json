@@ -13,10 +13,10 @@
       "paused": false,
       "allow_write": true,
       "created_at": "2026-08-08T23:03:05+02:00",
-      "last_run_at": "2026-08-28T18:14:35+02:00",
+      "last_run_at": "2026-08-29T18:08:47+02:00",
       "last_status": "ok",
-      "last_answer_preview": "## HSEQ: keine Änderungen\n\n**Ablauf der Tagesprüfung (18:00-Job, 2026-08-27):**\n\n**1. Eingang geprüft** (`HSEQ Sync/00 Arbeitsfluss/Eingang/`):\n- 4 Rohnotizen vorhanden, alle im Verarbeitungslog eingetragen:\n  - `2026-06-29 Internes Audit Rosier Sylt-Tinnum.md` → Log-Eintrag (Prüfsumme `3f610cc44373`)\n  - `2026-07-08 Internes Audit Hartmann Grevenbroich.md` → Log-Eintrag (`3aba61006606`)\n  - `2026",
-      "last_stamp": "2026-08-28"
+      "last_answer_preview": "Die Aufgabe: HSEQ-Tagesprüfung ausführen. Ich muss den Abschnitt \"Automatische Tagesprüfung\" aus der Vorlage-Datei ausführen:\n\n1. Alle Dateien in `00 Arbeitsfluss/Eingang/` auflisten (außer README.md).\n2. VORLAGE-Dateien zuerst prüfen.\n3. Abgleich über Verarbeitungslog mit SHA-256.\n4. Bereinigung (lazy): Fertige Berichte älter als ~7 Tage löschen — ABER: Chat-Vertrag sagt \"Chat: nie löschen, nie l",
+      "last_stamp": "2026-08-29"
     },
     {
       "id": "td-handover",
@@ -29,10 +29,10 @@
       "paused": false,
       "allow_write": true,
       "created_at": "2026-08-08T23:03:05+02:00",
-      "last_run_at": "2026-08-28T18:46:49+02:00",
+      "last_run_at": "2026-08-29T18:40:58+02:00",
       "last_status": "ok",
-      "last_answer_preview": "Neu: —\nOffen: —\nKonflikt/Stale: Offene Vertragsvorschlagszeile pending-contract.md: 2026-08-20 · memory-wiki · Wiki-Hygiene\n\nDaily geschrieben: `HSEQ Sync/00 Arbeitsfluss/Daily/2026-08-28.md`. Eingang (4 Dateien) vollständig im Verarbeitungslog, daher kein offener To-do-Stapel; kein neues Fertig; einzige offene Flanke bleibt die pending-contract-Bullet zur Wiki-Hygiene.",
-      "last_stamp": "2026-08-28"
+      "last_answer_preview": "{\"tool\": \"CreateNote\", \"args\": {\"path\": \"HSEQ Sync/00 Arbeitsfluss/Daily/2026-08-29.md\", \"content\": \"---\\ntags: [hseq, handover, daily]\\ntype: handover\\ndate: 2026-08-29\\ngenerated: auto\\n---\\n\\n# Handover · 2026-08-29\\n\\n## Briefing (3 Zeilen)\\n- Neu: —\\n- Offen: —\\n- Konflikt/Stale: —\\n\\n## Erledigt\\n- Keine neuen Verarbeitungen heute. Bestand unverändert.\\n\\n## Offen / blockiert\\n- —\\n\\n## Näch",
+      "last_stamp": "2026-08-29"
     },
     {
       "id": "td-lernen",
@@ -62,10 +62,10 @@
       "paused": false,
       "allow_write": false,
       "created_at": "2026-08-09T11:33:15+02:00",
-      "last_run_at": "2026-08-29T03:06:32+02:00",
+      "last_run_at": "2026-08-30T03:11:06+02:00",
       "last_status": "ok",
-      "last_answer_preview": "Memory-Hygiene 2026-08-29\nDaily: neu (2026-08-29.md)\nMEMORY PII: 0 → clean",
-      "last_stamp": "2026-08-29",
+      "last_answer_preview": "Memory-Hygiene 2026-08-30\nDaily: neu (2026-08-30.md)\nMEMORY PII: 0 → clean",
+      "last_stamp": "2026-08-30",
       "script": "memory_hygiene.py"
     },
     {
@@ -79,10 +79,10 @@
       "paused": false,
       "allow_write": false,
       "created_at": "2026-08-20T23:20:00+02:00",
-      "last_run_at": "2026-08-29T03:21:32+02:00",
+      "last_run_at": "2026-08-30T03:26:07+02:00",
       "last_status": "ok",
-      "last_answer_preview": "Wiki-Hygiene (2026-08-29 03:21 Europe/Berlin) [apply]\nPfad: /Users/lxndrhbrt/ObsidianVaults/memory-wiki\nSeiten: 18 | Sources: 11\nPlan: 0 | Moved: 0 | Purged: 0 | Link-Fixes: 0\nDead Links: 66 | Orphan Sources: 0\nPII Hits: 10 | Secrets: 0\nDigest: 29 Seiten (+0, stale-index 0)",
-      "last_stamp": "2026-08-29",
+      "last_answer_preview": "Wiki-Hygiene (2026-08-30 03:26 Europe/Berlin) [apply]\nPfad: /Users/lxndrhbrt/ObsidianVaults/memory-wiki\nSeiten: 19 | Sources: 12\nPlan: 0 | Moved: 0 | Purged: 0 | Link-Fixes: 0\nDead Links: 66 | Orphan Sources: 0\nPII Hits: 10 | Secrets: 0\nDigest: 31 Seiten (+2, stale-index 0)",
+      "last_stamp": "2026-08-30",
       "script": "wiki_hygiene.py"
     },
     {
@@ -96,10 +96,10 @@
       "paused": false,
       "allow_write": false,
       "created_at": "2026-08-09T11:33:15+02:00",
-      "last_run_at": "2026-08-29T06:06:44+02:00",
+      "last_run_at": "2026-08-30T06:11:18+02:00",
       "last_status": "ok",
-      "last_answer_preview": "Session-Cleanup 2026-08-29: exit=0\n{\"agentId\": \"main\", \"storePath\": \"/Users/lxndrhbrt/.openclaw/agents/main/sessions/sessions.json\", \"mode\": \"enforce\", \"dryRun\": false, \"beforeCount\": 18, \"afterCount\": 18, \"repaired\": 0, \"missing\": 0, \"dmScopeRetired\": 0, \"modelRunPruned\": 0, \"pruned\": 0, \"capped\": 0, \"unreferencedArtifacts\": {\"scannedFiles\": 255, \"removedFiles\": 0, \"freedBytes\": 0, \"olderThanMs\":",
-      "last_stamp": "2026-08-29",
+      "last_answer_preview": "Session-Cleanup 2026-08-30: exit=0\n{\"agentId\": \"main\", \"storePath\": \"/Users/lxndrhbrt/.openclaw/agents/main/sessions/sessions.json\", \"mode\": \"enforce\", \"dryRun\": false, \"beforeCount\": 22, \"afterCount\": 22, \"repaired\": 0, \"missing\": 0, \"dmScopeRetired\": 0, \"modelRunPruned\": 0, \"pruned\": 0, \"capped\": 0, \"unreferencedArtifacts\": {\"scannedFiles\": 270, \"removedFiles\": 0, \"freedBytes\": 0, \"olderThanMs\":",
+      "last_stamp": "2026-08-30",
       "script": "session_cleanup_legacy.py"
     }
   ],
