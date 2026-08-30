@@ -3,7 +3,7 @@
 import os
 import time
 
-from . import retrieval, vault_tools
+from . import retrieval, vault_scope, vault_tools
 from .vault_web_fallback import run_deadline
 
 _MAX_HITS = 12
@@ -31,6 +31,14 @@ def preview_vault_hits(query, top_k=8, budget_s=None, now=None):
     start = now if now is not None else time.monotonic()
     deadline = start + max(0.0, budget)
 
+    # Wiki = internes Gedächtnis, nie auswählbar: Treffer aus memory-wiki
+    # fliegen hier raus (Dateien, Ordner, Elternordner). Internes Retrieval
+    # (vault_scope.wiki_roots) bleibt unangetastet.
+    wiki_roots = tuple(vault_scope.wiki_roots())
+
+    def _is_wiki_hit(path):
+        return bool(path) and vault_scope.path_in_roots(path, wiki_roots)
+
     files = []
     folders = {}
     folder_by_disk = {}
@@ -40,6 +48,8 @@ def preview_vault_hits(query, top_k=8, budget_s=None, now=None):
     def _put_folder(path, score):
         canon = vault_tools.canon_vault_path(path)
         if not canon or canon in (".", "/"):
+            return
+        if _is_wiki_hit(canon):
             return
         leaf = canon.rstrip("/").rsplit("/", 1)[-1].lower()
         if leaf == "vorlagen":
@@ -67,6 +77,8 @@ def preview_vault_hits(query, top_k=8, budget_s=None, now=None):
             return
         canon = vault_tools.canon_vault_path(hit["path"])
         if not canon:
+            return
+        if _is_wiki_hit(canon):
             return
         hit = dict(hit)
         hit["path"] = canon

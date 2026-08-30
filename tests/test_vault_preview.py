@@ -305,6 +305,75 @@ def test_same_disk_file_listed_once():
         check("ASI-Pfad bleibt", len(asi_hits) >= 1, str(files))
 
 
+def test_wiki_hits_excluded_from_preview():
+    """memory-wiki = internes Gedächtnis: nie Treffer im Auswahl-Panel."""
+    print("\n[7] Wiki-Treffer (Datei, Ordner, Eltern) bleiben draußen:")
+    import tempfile
+    from core import config, vault_preview
+    import core.retrieval as retrieval_mod
+
+    old_find = retrieval_mod.vault_find
+    old_paths = list(config.VAULT_PATHS)
+    old_path = config.VAULT_PATH
+    retrieval_mod.vault_find = lambda query, top_k=None, min_score=None, **kw: {
+        "status": "success",
+        "query": query,
+        "selected": 3,
+        "results": [
+            {
+                # Wiki-Datei via Index — muss raus
+                "path": "/memory-wiki/Themen/Apfel.md",
+                "title": "Apfel.md",
+                "text": "Internes Gedächtnis.",
+                "score": 0.95,
+            },
+            {
+                # Fach-Vault-Datei — muss bleiben
+                "path": "/HSEQ Sync/Themen/Apfel.md",
+                "title": "Apfel.md",
+                "text": "Arbeits-Vault.",
+                "score": 0.85,
+            },
+            {
+                # Wiki-Wurzelordner — muss raus
+                "path": "/memory-wiki",
+                "title": "memory-wiki",
+                "score": 0.8,
+            },
+        ],
+    }
+    with tempfile.TemporaryDirectory(prefix="glyph-preview-wiki-") as td:
+        wiki = os.path.join(td, "memory-wiki")
+        hseq = os.path.join(td, "HSEQ Sync")
+        os.makedirs(os.path.join(wiki, "Themen"))
+        os.makedirs(os.path.join(hseq, "Themen"))
+        with open(os.path.join(wiki, "Themen", "Apfel.md"), "w", encoding="utf-8") as f:
+            f.write("# Apfel\nWiki-intern.\n")
+        with open(os.path.join(hseq, "Themen", "Apfel.md"), "w", encoding="utf-8") as f:
+            f.write("# Apfel\nFachvault.\n")
+        config.VAULT_PATHS = [hseq, wiki]
+        config.VAULT_PATH = hseq
+        try:
+            res = vault_preview.preview_vault_hits("Apfel")
+        finally:
+            retrieval_mod.vault_find = old_find
+            config.VAULT_PATHS = old_paths
+            config.VAULT_PATH = old_path
+    paths = [h.get("path") for h in res.get("hits") or []]
+    check("ok", res.get("ok") is True, str(res.get("ok")))
+    check(
+        "keine Wiki-Pfade",
+        not any(str(p).startswith("/memory-wiki") for p in paths),
+        f"-> {paths}",
+    )
+    check("Fach-Vault bleibt", "/HSEQ Sync/Themen/Apfel.md" in paths, f"-> {paths}")
+    check(
+        "kein Wiki-Ordner",
+        "/memory-wiki/Themen" not in paths and "/memory-wiki" not in paths,
+        f"-> {paths}",
+    )
+
+
 def main():
     print("=== Vault-Preview ===")
     test_empty_query()
@@ -313,6 +382,7 @@ def main():
     test_canon_strips_disk_home()
     test_index_hang_does_not_block_named_hits()
     test_same_disk_file_listed_once()
+    test_wiki_hits_excluded_from_preview()
     print(f"\n=== Ergebnis: {OK} ok, {FAIL} Fehler ===")
     sys.exit(1 if FAIL else 0)
 
