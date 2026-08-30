@@ -67,7 +67,7 @@ def thinker_step_detail(kind="agent", model=None):
     used = model
     if not used:
         try:
-            p = get_provider()
+            p = get_provider(kind)
         except Exception:
             p = None
         last = getattr(p, "last_used", None) if p else None

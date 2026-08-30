@@ -28,14 +28,19 @@ def _config_fallback(*attrs, default="deepseek/deepseek-v4-flash-0731"):
     return default
 
 
-def _make_direct():
+def _make_direct(kind="agent"):
+    if str(kind or "agent").lower() == "code":
+        return DirectProvider(
+            model=getattr(config, "CODE_OPENROUTER_MODEL", None) or "deepseek-v4-flash-vision-exp",
+            fallback_model=_config_fallback("CODE_OPENROUTER_FALLBACK_MODEL"),
+        )
     return DirectProvider(
         model=getattr(config, "AGENT_OPENROUTER_MODEL", None) or "deepseek-v4-flash-vision-exp",
         fallback_model=_config_fallback("AGENT_OPENROUTER_FALLBACK_MODEL"),
     )
 
 
-def _resolve_hybrid_provider():
+def _resolve_hybrid_provider(kind="agent"):
     """Hybrid: Direct primär, OpenRouter als Reserve.
 
     Zeitbewusst: während konfigurierter Peak-Fenster (Standard: DeepSeek
@@ -46,10 +51,10 @@ def _resolve_hybrid_provider():
         from .. import peak as _peak
 
         if _peak.is_peak():
-            return _make_openrouter()
+            return _make_openrouter(kind)
     except Exception:
         pass
-    return _make_direct()
+    return _make_direct(kind)
 
 
 def _or_slug_or(primary, fallback):
@@ -69,11 +74,21 @@ def _or_slug_or(primary, fallback):
     return p or "deepseek/deepseek-v4-flash-0731"
 
 
-def _make_openrouter():
+def _make_openrouter(kind="agent"):
     mode = str(getattr(config, "MODE", "agent") or "agent").lower()
+    kind = str(kind or "agent").lower()
     if mode == "openrouter-chat":
         primary = getattr(config, "OPENROUTER_MODEL", None) or "deepseek-v4-flash-vision-exp"
         fb = _config_fallback("OPENROUTER_FALLBACK_MODEL")
+    elif kind == "code":
+        # Code-Kopf hat EIGENE Runtime-Modelle (CODE_OPENROUTER_MODEL) —
+        # vorher bekam er stillschweigend das Agent-Paar (Bug: DS-V4V-Primary
+        # als Direct-ID auf OpenRouter → 404 → stiller glm-Fallback).
+        primary = (
+            getattr(config, "CODE_OPENROUTER_MODEL", None)
+            or "deepseek-v4-flash-vision-exp"
+        )
+        fb = _config_fallback("CODE_OPENROUTER_FALLBACK_MODEL", "OPENROUTER_FALLBACK_MODEL")
     else:
         primary = (
             getattr(config, "AGENT_OPENROUTER_MODEL", None)
@@ -95,8 +110,8 @@ def _make_openrouter():
 _PROVIDERS = {
     "mlx": lambda: MLXProvider(),
     "direct": _make_direct,
-    "openrouter": _make_openrouter,
-    "hybrid": _resolve_hybrid_provider,
+    "openrouter": lambda kind="agent": _make_openrouter(kind),
+    "hybrid": lambda kind="agent": _resolve_hybrid_provider(kind),
     "fallback": lambda: FallbackProvider(),
 }
 
@@ -134,7 +149,10 @@ def get_provider(kind="agent"):
         factory = _PROVIDERS.get(name)
         if factory is None:
             raise ValueError(f"Unbekannte Provider-Konfiguration: {name}")
-        _singletons[kind] = factory()
+        try:
+            _singletons[kind] = factory(kind)
+        except TypeError:
+            _singletons[kind] = factory()
     return _singletons[kind]
 
 
