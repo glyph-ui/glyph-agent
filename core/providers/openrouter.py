@@ -44,10 +44,24 @@ def _part_text(part):
     ptype = str(part.get("type") or "").lower()
     if "encrypted" in ptype:
         return ""
-    for key in ("text", "content", "reasoning", "thought"):
+    for key in ("text", "content"):
         val = part.get(key)
         if isinstance(val, str) and val.strip():
             return val
+    return ""
+
+
+def _tool_call_json(blob):
+    """Tool-Call-JSON aus einem Reasoning-Feld (Gemini-Quirk) — sonst ''."""
+    t = str(blob or "").strip()
+    if not t.startswith("{"):
+        return ""
+    try:
+        obj = json.loads(t)
+    except Exception:
+        return ""
+    if isinstance(obj, dict) and obj.get("tool"):
+        return json.dumps(obj, ensure_ascii=False)
     return ""
 
 
@@ -67,7 +81,21 @@ def _message_text(data):
     msg = choice.get("message") or {}
     content = msg.get("content")
     if isinstance(content, list):
-        content = "".join(_part_text(p) for p in content)
+        parts_out = []
+        for p in content:
+            if not isinstance(p, dict):
+                continue
+            ptype = str(p.get("type") or "").lower()
+            if "encrypted" in ptype:
+                continue
+            if "reasoning" in ptype:
+                # Denkpart: nur Tool-Call-JSON retten, Denkprosa überspringen.
+                t = _tool_call_json(p.get("reasoning") or p.get("text") or "")
+            else:
+                t = _part_text(p)
+            if t:
+                parts_out.append(t)
+        content = "".join(parts_out)
     text = str(content or "").strip()
     if text:
         return text
@@ -94,21 +122,24 @@ def _message_text(data):
                 )
         if parts:
             return "\n".join(parts)
+    # Reasoning-Felder: nur Tool-Call-JSON (Gemini-Quirk) — Denkprosa nie als Antwort.
     for blob in (
         msg.get("reasoning_content"),
         msg.get("reasoning"),
         msg.get("thought"),
-        choice.get("reasoning"),
-        choice.get("text"),
     ):
-        t = str(blob or "").strip()
+        t = _tool_call_json(blob)
         if t:
             return t
+    legacy_choice_text = str(choice.get("text") or "").strip()
+    if legacy_choice_text:
+        return legacy_choice_text
     details = msg.get("reasoning_details") or choice.get("reasoning_details") or []
     if isinstance(details, list):
         harvested = []
         for d in details:
-            t = _part_text(d)
+            # Nur Tool-Call-JSON aus Details retten — keine Denkprosa.
+            t = _tool_call_json(_part_text(d))
             if t:
                 harvested.append(t)
         if harvested:
@@ -290,6 +321,19 @@ class OpenRouterProvider(ModelProvider):
         max_tokens = getattr(_cfg, "MAX_TOKENS", 0) or 0
         if max_tokens > 0:
             payload["max_tokens"] = max_tokens
+        # Reasoning-Modelle (GLM 5.3 Flash, DeepSeek-Reasoner): Denkspur aktiv
+        # zügeln — sonst frisst das Reasoning das max_tokens-Budget und die echte
+        # Antwort bleibt leer (→ Retry/Fallback statt Antwort). OpenRouter-Norm:
+        # reasoning: {effort}. REASONING_EFFORT in .env überschreibt; leer = aus.
+        effort = str(os.environ.get("REASONING_EFFORT", "") or "").strip().lower()
+        if not effort:
+            slug = str(m or "").lower()
+            if any(h in slug for h in ("glm", "reasoner", "thinking")):
+                effort = "low"
+        if effort in ("low", "medium", "high"):
+            payload["reasoning"] = {"effort": effort}
+        elif effort in ("off", "none", "disabled"):
+            payload["reasoning"] = {"enabled": False, "exclude": True}
         req = urllib.request.Request(
             f"{str(use_url).rstrip('/')}/chat/completions",
             data=json.dumps(payload).encode("utf-8"),
