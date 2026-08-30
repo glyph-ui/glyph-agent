@@ -86,7 +86,7 @@ def _maybe_emit_tool_reply_draft(emit, reply):
     emit({"type": "draft", "status": "content", "text": text})
 
 
-def _build_trace(tool_calls, tool_results=None, fallback_used=None, steps=None):
+def _build_trace(tool_calls, tool_results=None, fallback_used=None, steps=None, kind="agent"):
     """Erzeugt einen Diagnose-Trace (sichtbarer Provider/Modell/Tool-Status).
     Wird an jede run()-Antwort angehängt (Punkt: sichtbare Diagnose).
 
@@ -95,7 +95,7 @@ def _build_trace(tool_calls, tool_results=None, fallback_used=None, steps=None):
     steps: chronologische Kurzliste [{step, status, detail?}, ...] für die UI.
     """
     try:
-        provider = llm.get_provider("agent")
+        provider = llm.get_provider(kind if kind == "code" else "agent")
         pname = getattr(provider, "provider_name", "?")
         mname = getattr(provider, "model_name", "?")
         active = getattr(provider, "_active_model", None)
@@ -609,7 +609,7 @@ def _run_self_id(user_message, kind="agent"):
         "rounds": 1,
         "tool_calls": [],
         "ok": True,
-        "trace": _build_trace([], [], steps=steps),
+        "trace": _build_trace([], [], steps=steps, kind=kind),
     }
 
 

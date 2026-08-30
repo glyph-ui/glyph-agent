@@ -376,7 +376,7 @@ def _handle_chat(payload, send=None):
             grant_scope=(payload or {}).get("grant_scope"),
             grant_spec=(payload or {}).get("grant_spec"),
         )
-        p = llm.get_provider()
+        p = llm.get_provider("code")
         used_model = (
             (result.get("trace") or {}).get("model")
             or getattr(config, "CODE_OPENROUTER_MODEL", None)
