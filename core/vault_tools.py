@@ -501,12 +501,72 @@ def _token_pair_score(a, b):
     return 0
 
 
+
+def _distinctive_token_hit_compacts(dist_toks, n_sp, n_c, n_d, name_toks, n_nums):
+    """Folded distinctive query tokens that match the name (token/pair/number)."""
+    hits = []
+    for t in dist_toks or []:
+        _, t_c, t_d = _fold_name(t)
+        if not t_c:
+            continue
+        matched = False
+        if _token_in_name(t, t_c, n_sp, n_c) or t_c == n_c or t_d == n_d:
+            matched = True
+        else:
+            for nt in name_toks:
+                if _token_pair_score(t_c, nt):
+                    matched = True
+                    break
+        if not matched:
+            q_nums = set(_number_compacts(t)) | set(_number_compacts(t_c))
+            if q_nums & n_nums:
+                matched = True
+        if matched:
+            hits.append(t_c)
+    return hits
+
+
+def _name_match_coverage_ok(dist_toks, hit_compacts, primary):
+    """
+    Bei ≥2 Distinkt-Tokens: starker Score nur mit Coverage.
+    - längstes Distinkt-Token trifft, oder
+    - ≥2 Distinkt-Tokens treffen / strikte Majority, oder
+    - Treffer = Primary-Dateiname-Token (Satzfrage: ein markantes Name-Token reicht).
+    """
+    if len(dist_toks or []) < 2:
+        return True
+    hits = list(hit_compacts or [])
+    if not hits:
+        return False
+    hit_set = set(hits)
+
+    def _clen(t):
+        _, t_c, _ = _fold_name(t)
+        return len(t_c or "")
+
+    longest = max(dist_toks, key=_clen)
+    _, long_c, _ = _fold_name(longest)
+    if long_c and long_c in hit_set:
+        return True
+    if len(hits) >= 2:
+        return True
+    if len(hits) * 2 > len(dist_toks):
+        return True
+    if primary:
+        for hc in hits:
+            if hc == primary or _token_pair_score(hc, primary) >= 82:
+                return True
+    return False
+
+
 def name_match_score(query, name):
     """
     Score 0–100: heißt der Ordner/die Datei so wie die Frage?
     Unabhängig vom Embedding-Index; Tippfehler ss/s (Arbeitssicherheit).
     Satzfragen: ein markantes Dateiname-Token reicht (nicht alle Query-Tokens).
     Zahlen (209-007) und seltene Wörter schlagen DGUV/Vorschrift/Information.
+    Bei ≥2 Distinkt-Tokens: kein starker Treffer (≥70) nur durch ein einzelnes
+    kurzes Neben-Token — Coverage (längstes Token / Mehrheit / Primary) nötig.
     """
     n_sp, n_c, n_d = _fold_name(name)
     if not n_c:
@@ -581,6 +641,28 @@ def name_match_score(query, name):
             best = max(best, sc)
         if best < 70 and len(t_c) >= 8 and t_c in n_c:
             best = max(best, 60)
+
+    # Coverage-Gate: Multi-Token-Query darf nicht nur über ein kurzes Neben-Token
+    # auf ≥70 kommen (Stolperkate+Kanten → Kanten-PDF). Ein-Token-Queries unverändert.
+    if best >= 70 and len(dist_toks) >= 2:
+        strong_num = bool(hit_nums and any(len(x) >= 6 for x in hit_nums))
+        whole_ok = bool(compact_hit or dedup_hit)
+        if (
+            not whole_ok
+            and len(n_d) >= 8
+            and len(q_d) >= 8
+            and _edit_distance(q_d, n_d, 2) <= 2
+        ):
+            whole_ok = True
+        all_dist_ok = bool(dist_toks) and all(
+            _token_in_name(t, _fold_name(t)[1], n_sp, n_c) for t in dist_toks
+        )
+        if not (strong_num or whole_ok or all_dist_ok):
+            hits = _distinctive_token_hit_compacts(
+                dist_toks, n_sp, n_c, n_d, name_toks, n_nums
+            )
+            if not _name_match_coverage_ok(dist_toks, hits, primary):
+                best = min(best, 68)
     return best
 
 
@@ -598,6 +680,22 @@ def _query_vault_hints(query):
         if n_c and n_c in q_c:
             hints.append(name)
     return hints
+
+
+# CEO / ObsiBot hard-deny: these vault basenames are NEVER searched,
+# even if registry mode is wrong or private_paths() misses them.
+_SEARCH_DENY_VAULT_BASENAMES = frozenset({
+    "privat",
+    "peniel",
+    "_recovery",
+    "recovery",
+})
+
+
+def _is_search_denied_vault(vault_root_or_name) -> bool:
+    """True if vault basename is on the hard-deny allowlist (case-insensitive)."""
+    base = os.path.basename(os.path.normpath(str(vault_root_or_name or ""))).lower()
+    return bool(base) and base in _SEARCH_DENY_VAULT_BASENAMES
 
 
 def match_vault_entries(query, limit=16, min_score=70):
@@ -666,7 +764,7 @@ def match_vault_entries(query, limit=16, min_score=70):
     home_r = os.path.realpath(os.path.expanduser("~"))
     for vroot in vault_roots:
         vroot_r = os.path.realpath(vroot)
-        if vroot_r in _priv:
+        if vroot_r in _priv or _is_search_denied_vault(vroot_r):
             continue
         if not os.path.isdir(vroot_r):
             continue
@@ -787,8 +885,8 @@ def search_vault(query, limit=20, roots=None):
         _priv = set()
     for vault_i, vroot in enumerate(vault_roots):
         vroot_r = os.path.realpath(vroot)
-        if vroot_r in _priv:
-            # Privat: kein Auto-Search (Cloud-Korpus) — nur explizites ReadNote
+        if vroot_r in _priv or _is_search_denied_vault(vroot_r):
+            # Privat / hard-deny: kein Auto-Search (Cloud-Korpus) — nur explizites ReadNote
             continue
         vault_name = os.path.basename(vroot_r)
         for root, _dirs, files in os.walk(vroot_r):

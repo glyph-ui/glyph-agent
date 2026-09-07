@@ -202,7 +202,8 @@ BLOCKED_DIRS = [
     d.lower().strip()
     for d in os.environ.get(
         "BLOCKED_DIRS",
-        "private,privat,secrets,health,geheim,persönlich,personenbezogen,recovery,_recovery,recupero",
+        "private,privat,secrets,health,geheim,persönlich,personenbezogen,recovery,_recovery,recupero"
+        ",_hygiene-trash",  # Wiki-Papierkorb (alte Session-Summaries) — kein Suchtreffer
     ).split(",")
     if d.strip()
 ]

@@ -55,6 +55,41 @@ class DistinctivePdfNameScoreTests(unittest.TestCase):
         self.assertLess(vault_tools.name_match_score(q, "Vorlagen"), 70)
 
 
+
+class NameMatchCoverageTests(unittest.TestCase):
+    """Multi-Token: kein starker Score nur durch ein kurzes Neben-Token."""
+
+    KANTEN_PDF = "GBO-Kanten-Langband-Tellerschleifmaschine.pdf"
+
+    def test_stolperkate_kanten_does_not_boost_kanten_pdf(self):
+        q = "Stolperkate Kanten"
+        self.assertLess(
+            vault_tools.name_match_score(q, self.KANTEN_PDF),
+            70,
+            "nur Token kanten darf Stolperkate-Query nicht stark matchen",
+        )
+
+    def test_longest_token_hit_keeps_strong_score(self):
+        q = "Stolperkate Kanten"
+        self.assertGreaterEqual(
+            vault_tools.name_match_score(q, "Stolperkate-etwas.pdf"),
+            70,
+            "längstes Distinkt-Token stolperkate muss stark bleiben",
+        )
+
+    def test_single_token_kanten_still_strong(self):
+        self.assertGreaterEqual(
+            vault_tools.name_match_score("Kanten", self.KANTEN_PDF),
+            70,
+        )
+
+    def test_two_matching_tokens_still_strong(self):
+        self.assertGreaterEqual(
+            vault_tools.name_match_score("Kanten Langband", self.KANTEN_PDF),
+            70,
+        )
+
+
 class TokenizeAndSearchTests(unittest.TestCase):
     def test_tokenize_keeps_date_drops_stopwords(self):
         toks = vault_tools._tokenize_query(

@@ -48,7 +48,7 @@ _LEGACY_SEED = [
     {
         "name": "Peniel",
         "path": os.path.join(OBSIDIAN_ROOT, "Peniel"),
-        "mode": "r",
+        "mode": "private",
         "primary": False,
     },
     {
