@@ -185,8 +185,10 @@ TOOLS = [
     {
         "name": "ReadPdf",
         "description": (
-            "Liest Text aus einer PDF-Datei im Vault. Erlaubt: Lesen. "
-            "Kein Ingest, kein Schreiben. Nur Vault-Pfade; Zeichen-Cap. "
+            "Liest Text aus einer PDF-Datei im Vault. Lesen erlaubt. "
+            "Ingest = Folge-Schreiben via CreateNote/ApplyEdit laut "
+            "vault_write_policy (Allowlist), nicht dieses Tool. "
+            "Nie PDF-Datei schreiben. Nur Vault-Pfade; Zeichen-Cap. "
             "Nach Vault-Listing oder Suche sofort die 1–2 PDFs lesen, "
             "deren Dateiname zur Frage passt. Niemals den Nutzer fragen, "
             "welche Datei zu öffnen."

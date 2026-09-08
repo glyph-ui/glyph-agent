@@ -25,7 +25,7 @@ Lokale Engine hinter dem Glyph-Profil **glyph-agent**: Vault-Gedächtnis, Recher
 | **Swarm** | Composer-Aktion: Planer → Websuche → Synthese. Einstieg `POST /chat` mit `swarm: true` (`run_swarm`). Köpfe °_Agent / ^_Code. | `core/swarm.py` | HTTP `/chat`, Glyph-Composer |
 | **Recurring/Jobs** | Plan, Catch-up, HSEQ-Seeds, Nightly-Scripts (`memory_hygiene.py`, `wiki_hygiene.py`, `session_cleanup_legacy.py`) | `core/recurring.py`, `jobs/`, `scripts/` | `jobs/recurring.json` |
 | **Aufgaben** | Manuelle Übergabe zwischen Köpfen. SoT `~/.glyph/tasks.json`. Zielkopf optional, nie die ganze Session. | `core/tasks.py` | HTTP `/tasks`, Glyph Plan-Tab |
-| **LLM/Provider** | Direct Pro/Flash → OpenRouter 0731 | `core/llm.py`, `core/providers/` | config, Bindings |
+| **LLM/Provider** | Direct → Router (OpenRouter oder Orca, `OPENROUTER_URL`) | `core/llm.py`, `core/providers/` | config, Bindings |
 | **Config** | Env, Models, Ports | `core/config.py`, `core/dotenv.py` | alles |
 | **Verfassung** | B+-Regeln, Tabus | `CONSTITUTION.md` + **diese** CONTEXT | `~/.glyph/AGENTS.md`, MEMORY |
 
@@ -61,12 +61,16 @@ Manueller Arbeits-Vault-Zugriff aus der UI (°_Agent-Apfel). `POST /vault/find` 
 _Avoid_: Arbeits-Vault ohne Apfel; KomNet/DGUV ohne Apfel; Wiki hinter den Apfel; HTML-Scrape der Zielseite; offene Websuche als Apfel-Fallback
 
 **OpenRouter (Technik)**:
-Config- und Provider-Name der Cloud-API (`AGENT_PRIMARY_PROVIDER`, CONSTITUTION, Logs). **Kein** Glyph-UI-Profil, **keine** Nutzer-Sprache in der UI.
-_Avoid_: OpenRouter-Profil (entfernt)
+Env- und Provider-IDs des Router-Hops (`OPENROUTER_URL`, `OPENROUTER_API_KEY`, Modus `openrouter`). **Kein** Glyph-UI-Profil. UI-Name: **Router**.
+_Avoid_: OpenRouter-Profil (entfernt); OpenRouter als sichtbarer Slot-Name
+
+**Router**:
+Slash-Hop: `OPENROUTER_URL` + `OPENROUTER_API_KEY`. Default `https://openrouter.ai/api/v1`; Orca `https://api.orcarouter.ai/v1`. `~/.glyph-ui/bindings.json` überschreibt `.env` für URL und Key (wie Direct-Host).
+_Avoid_: Slash-ID immer nach openrouter.ai hart verdrahten
 
 **B+**:
 Aktuelle Architektur: lokal Gedächtnis/Suche, Web nur bei Bedarf, Cloud-Denker formuliert, Antwort + Trace.
-_Avoid_: „3-Stufen-Fallback“ / lokaler Chat-Fallback (existiert nicht mehr; Direct Vision-Exp → OpenRouter Flash)
+_Avoid_: „3-Stufen-Fallback“ / lokaler Chat-Fallback (existiert nicht mehr; Direct Vision-Exp → Router-Reserve)
 
 **Workspace-Recht**:
 Capability eines angebundenen Code-Roots: ungebunden / `r` / `r+w` / `private`. SoT `~/.glyph/workspaces.json`. `r+w` erlaubt Lesen und macht Apply möglich — Apply selbst braucht eine **Freigabe**. Kein allgemeines `w` im Kabelsalat.
@@ -85,8 +89,8 @@ Benannte Arbeit, nicht die Chat-Session. Grant: `task_id`, Workspace-Root, Pfadp
 _Avoid_: Session-Grant; Chat als Scope; Prompt-Themenklassifikation; mit **Aufgabe** (Übergabe) verwechseln
 
 **Aufgabe**:
-Manuell übergebene Arbeit zwischen Köpfen. Neu braucht `pass` und einen Beleg aus **Meldung + Antwort**. Speichert nur diesen Snapshot (plus kompakter Trace, Anhang-Pfade) in `~/.glyph/tasks.json`. Zielkopf optional. Status `analysis` ist Workflow, kein Kopf. Status `done` nur mit `artifact`.
-_Avoid_: Aufgabe ohne Meldung; Session-Zeiger; ganze Session; Vault-Inhalt; Analyse als Kopf; Recurring-To-do; Fertig ohne Artefakt
+Manuell übergebene Arbeit zwischen Köpfen. Neu braucht `pass` und einen Beleg aus **Meldung + Antwort**. Speichert nur diesen Snapshot (plus kompakter Trace, Anhang-Pfade) in `~/.glyph/tasks.json`. Zielkopf optional. Status `analysis` ist Workflow, kein Kopf. Status `done` nur mit `artifact`. Plan-UI **Erledigt** = `DELETE /tasks/<id>` (Eintrag weg, kein Pfad).
+_Avoid_: Aufgabe ohne Meldung; Session-Zeiger; ganze Session; Vault-Inhalt; Analyse als Kopf; Recurring-To-do; Plan-Erledigt als Link-Pflicht
 
 **Änderungssatz**:
 Gesammelte Dateiänderungen, ein Gesamt-Diff, atomarer Apply nach Freigabe. Danach Tests; Fail → kein Commit.
@@ -98,8 +102,8 @@ _Avoid_: git commit in der Whitelist als stilles Allow
 
 ## Settled decisions (Direct-Hop 2026-08-12)
 
-- °_Agent und ^_Code: Direct `deepseek-v4-flash-vision-exp` (Text + Bilder) → OpenRouter `deepseek/deepseek-v4-flash-0731`. Kein Gemini-Default, kein Auto-Hop nur bei Screenshot.
-- Key: `DIRECT_API_KEY` (Alias `DEEPSEEK_API_KEY`) + `DIRECT_API_URL` (Default `https://api.deepseek.com`). OpenAI-kompatibel, nicht DeepSeek-exklusiv.
+- °_Agent und ^_Code: Direct `deepseek-v4-flash-vision-exp` (Text + Bilder) → Router-Reserve (Slash-ID). Router-Host `OPENROUTER_URL` Default `https://openrouter.ai/api/v1`; Orca `https://api.orcarouter.ai/v1`. Kein Gemini-Default, kein Auto-Hop nur bei Screenshot.
+- Key: `DIRECT_API_KEY` (Alias `DEEPSEEK_API_KEY`) + `DIRECT_API_URL` (Default `https://api.deepseek.com`). Router-Key `OPENROUTER_API_KEY` (OpenRouter `sk-or-…` oder Orca `sk-orca-…`). OpenAI-kompatibel, nicht DeepSeek-exklusiv.
 - Thinking = API-Default. Chat `EXTERNAL_MAX_CHARS=8000`. Kein Tiny/Free.
 
 ## Settled decisions (grill 2026-08-05)
@@ -145,7 +149,7 @@ _Avoid_: git commit in der Whitelist als stilles Allow
 - SoT: `~/.glyph/tasks.json` via `core/tasks.py` + HTTP `/tasks`.
 - Zielkopf optional. Default leer. Köpfe: `grok` · `_code` · `glyph-agent` · `codex`. **Kein** Kopf `analysis`.
 - Belege: Prompt, Antwort, kompakter Trace, Anhang-Metadaten (Pfad/Name) — keine Blobs, keine ganze Session, kein Session-Zeiger (°_Agent speichert keine Sessions).
-- Anlegen braucht `pass` **und** Meldung+Antwort. `done` nur mit `artifact` (Pfad/Ort). Chat-Belege sind Kontext, kein Abschluss. Alte Items ohne Paar laden weiter.
+- Anlegen braucht `pass` **und** Meldung+Antwort. PATCH `done` nur mit `artifact`. Plan **Erledigt** löscht den Eintrag (`DELETE /tasks/<id>`), kein Pfad. Chat-Belege sind Kontext, kein Abschluss. Alte Items ohne Paar laden weiter.
 - Prompt fordert: keine Build-Änderung ohne Nutzerauftrag; Rückfragen als Status `needs_input`.
 - Sichtbar im Glyph-Kalender Tab Plan; Übernehmen legt den Prompt in den Composer. Kein automatischer Kopfwechsel.
 
@@ -233,5 +237,5 @@ _Avoid_: git commit in der Whitelist als stilles Allow
 ## Settled decisions (OpenClaw-Tools 2026-08-07)
 
 - **°_Agent**: Wiki-Aliase `WikiSearch`→VaultFind, `WikiGet`→ReadNote, `WikiApply`→ApplyEdit; `WikiStatus` liest agent-digest (read-only).
-- `BrowseUrl` = TinyFish Extract mit Summary-Goal; `ReadPdf` liest Vault-PDFs (erlaubt; kein Ingest/Schreiben); Mail via himalaya; `MessageSend` via openclaw (write+confirm).
+- `BrowseUrl` = TinyFish Extract mit Summary-Goal; `ReadPdf` liest Vault-PDFs; PDF-Ingest = ReadPdf → Claims → CreateNote/ApplyEdit Allowlist (nie PDF-Datei schreiben); Mail via himalaya; `MessageSend` via openclaw (write+confirm).
 - Kein Shell im Agent-Modus. Externe CLIs graceful degrade.

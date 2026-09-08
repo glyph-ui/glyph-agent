@@ -22,6 +22,11 @@ Sicherheit:
 from . import llm, tool_registry, log, config
 from . import routing, retrieval, web, research, vault_scope
 
+
+class ClientCancelled(Exception):
+    """Raised when the HTTP client disconnected (Abbruch) — stop further rounds."""
+
+
 MAX_ROUNDS = 4
 _PDF_READ_LIMIT = 2
 _PDF_NAME_MATCH_MIN = 70
@@ -302,7 +307,9 @@ def _role():
     "Web: Exa grob, TinyFish fein (URL/BrowseUrl). "
     "PDF im Vault lesen: ReadPdf (erlaubt; nach Listing/Suche sofort die "
     "1–2 namenspassenden Dateien — nie den Nutzer fragen, welches File). "
-    "Kein PDF-Ingest/Schreiben. "
+    "PDF-Ingest: Skill vault-ingest / „ingest … PDF“ — ReadPdf, dann "
+    "CreateNote/ApplyEdit nur Allowlist (HSEQ Themen/; Wiki sources/ neu + "
+    "concepts|entities|syntheses). Nie PDF-Datei schreiben/erzeugen. Privat nie. "
     "Mail: MailList/MailRead (himalaya). "
     "Wiki-Status: WikiStatus. Kein Shell.\n"
     "- Skills (Glyph Slash): hseq-eingang, hseq-handover, hseq-aus-fertig-lernen, "
@@ -645,11 +652,17 @@ def run(
              Rückgabe: dict {"answer": str, "rounds": int, "tool_calls": [..], "ok": bool}
     """
     def _emit(event):
-        """Reicht ein Live-Event an den Callback weiter (nie tödlich)."""
+        """Reicht ein Live-Event an den Callback weiter (nie tödlich).
+
+        ClientCancelled wird weitergereicht, damit der Loop bei Abbruch
+        (HTTP-Disconnect nach session/cancel) keine weiteren Runden startet.
+        """
         if on_event is None:
             return
         try:
             on_event(event)
+        except ClientCancelled:
+            raise
         except Exception:
             pass
 
@@ -783,12 +796,13 @@ def run(
 
     acc = {"tool_calls": tool_calls, "tool_results": tool_results, "steps": steps, "history": history}
 
-    def _vault_outcome(v):
+    def _vault_outcome(v, source="hybrid"):
         sel = int(v.get("selected") or 0) if v is not None else 0
         step = []
         if v is not None:
+            # source: "Wiki" (Apfel aus / memory-wiki) oder "hybrid" (Arbeits-Vault)
             step = [{"step": "VaultFind", "status": "success" if sel > 0 else "empty",
-                     "detail": f"{sel} Treffer (hybrid)"}]
+                     "detail": f"{sel} Treffer ({source})"}]
         return {
             "tool_calls": [{"tool": "VaultFind", "args": {"query": user_message}, "ok": True}] if v is not None else [],
             "tool_results": [{"tool": "VaultFind", "args": {"query": user_message},
@@ -805,28 +819,28 @@ def run(
     if vault_selected is not None:
         _merge_precheck(acc, _selected_vault_outcome(vault_selected, user_message, _emit))
         _emit({"type": "step", "action": "VaultFind", "status": "start",
-               "detail": "memory-wiki"})
+               "detail": "Wiki"})
         wiki = _run_vault_find(user_message, roots=vault_scope.wiki_roots())
         if wiki is not None:
             wsel = int(wiki.get("selected") or 0)
             _emit({"type": "step", "action": "VaultFind", "status": "done",
-                   "detail": f"{wsel} Treffer (memory-wiki)" if wsel else "memory-wiki leer"})
+                   "detail": f"{wsel} Treffer (Wiki)" if wsel else "Wiki leer"})
         else:
             _emit({"type": "step", "action": "VaultFind", "status": "done",
-                   "detail": "memory-wiki leer"})
-        _merge_precheck(acc, _vault_outcome(wiki))
+                   "detail": "Wiki leer"})
+        _merge_precheck(acc, _vault_outcome(wiki, source="Wiki"))
     elif vault_search is False:
         _emit({"type": "step", "action": "VaultFind", "status": "start",
-               "detail": "memory-wiki"})
+               "detail": "Wiki"})
         wiki = _run_vault_find(user_message, roots=vault_scope.wiki_roots())
         if wiki is not None:
             wsel = int(wiki.get("selected") or 0)
             _emit({"type": "step", "action": "VaultFind", "status": "done",
-                   "detail": f"{wsel} Treffer (memory-wiki)" if wsel else "memory-wiki leer"})
+                   "detail": f"{wsel} Treffer (Wiki)" if wsel else "Wiki leer"})
         else:
             _emit({"type": "step", "action": "VaultFind", "status": "done",
-                   "detail": "memory-wiki leer"})
-        _merge_precheck(acc, _vault_outcome(wiki))
+                   "detail": "Wiki leer"})
+        _merge_precheck(acc, _vault_outcome(wiki, source="Wiki"))
         if need_web_fast:
             _merge_precheck(acc, _run_web_precheck(user_message, intent, _emit))
     else:
@@ -874,7 +888,7 @@ def run(
                            "detail": "fehlgeschlagen"})
 
         _emit({"type": "step", "action": "VaultFind", "status": "start",
-               "detail": "suche im Obsidian-Vault (Arbeitssicherheit/HSEQ)"})
+               "detail": "Arbeits-Vault"})
 
         if need_web_fast:
             # --- PARALLEL: VaultFind + WebSearch gleichzeitig (0.1a). ---
@@ -940,9 +954,35 @@ def run(
     while rounds < max_rounds:
         rounds += 1
         messages_for_llm = [{"role": "system", "content": system}] + history
-        _emit({"type": "step", "action": "OpenRouter", "status": "start",
-               "detail": llm.thinker_step_detail("agent")})
+        try:
+            _emit({"type": "step", "action": "OpenRouter", "status": "start",
+                   "detail": llm.thinker_step_detail("agent")})
+        except ClientCancelled:
+            log.log("agent_cancelled", rounds=rounds, phase="before_llm")
+            return {
+                "answer": "",
+                "rounds": rounds,
+                "tool_calls": tool_calls,
+                "ok": False,
+                "cancelled": True,
+                "trace": _build_trace(tool_calls, tool_results, steps=steps),
+            }
         reply = call_llm(messages_for_llm)
+
+        try:
+            # Silent probe: fails if UI aborted the NDJSON stream mid-LLM.
+            # Unknown type is ignored by glyph-agent-acp streamChat.
+            _emit({"type": "_cancel_check"})
+        except ClientCancelled:
+            log.log("agent_cancelled", rounds=rounds, phase="after_llm")
+            return {
+                "answer": "",
+                "rounds": rounds,
+                "tool_calls": tool_calls,
+                "ok": False,
+                "cancelled": True,
+                "trace": _build_trace(tool_calls, tool_results, steps=steps),
+            }
 
         parsed = tool_registry.try_parse_tool_call(reply)
         if parsed is None:
