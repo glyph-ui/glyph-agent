@@ -102,11 +102,46 @@ class CodeToolsTests(unittest.TestCase):
         self.assertTrue(ok)
         ok, reason = code_tools.shell_allowed("git status --short; git log -1")
         self.assertFalse(ok)
+        # read-only Pipe (ls|head) ist seit 2026-09-08 erlaubt
         ok, reason = code_tools.shell_allowed("ls | head")
-        self.assertFalse(ok)
+        self.assertTrue(ok, reason)
         # Einzelbefehl bleibt erlaubt
         ok, _ = code_tools.shell_allowed("git status --short")
         self.assertTrue(ok)
+
+        # Quotes mit Alternation sind KEIN Compound (keine Freigabe noetig)
+        ok, reason = code_tools.shell_allowed('rg "foo|bar" src/')
+        self.assertTrue(ok, reason)
+
+        # mv ist elevated (Freigabe), nicht hart verboten
+        kind, _ = code_tools.shell_classify("mv a.txt b.txt")
+        self.assertEqual(kind, "elevated")
+
+        # sed ist erlaubt, sobald es in der Whitelist steht (Whitelist = Env-SoT)
+        old_allow = list(config.CODE_SHELL_ALLOW)
+        config.CODE_SHELL_ALLOW = old_allow + [r"^sed(\s|$)"]
+        try:
+            ok, reason = code_tools.shell_allowed("sed -i '' 's/a/b/' f.txt")
+            self.assertTrue(ok, reason)
+        finally:
+            config.CODE_SHELL_ALLOW = old_allow
+
+        # read-only Pipe-Kette ist erlaubt (kein Grant), sobald alle Stufen read sind
+        old_allow = list(config.CODE_SHELL_ALLOW)
+        config.CODE_SHELL_ALLOW = old_allow + [r"^sort(\s|$)"]
+        try:
+            kind, _ = code_tools.shell_classify("wc -l a.jsx | sort -nr | head -3")
+            self.assertEqual(kind, "allow")
+            kind, _ = code_tools.shell_classify("ls | rm -rf x")
+            self.assertEqual(kind, "deny")
+            kind, _ = code_tools.shell_classify("ls | npm install x")
+            self.assertEqual(kind, "elevated")
+        finally:
+            config.CODE_SHELL_ALLOW = old_allow
+
+        # npm run lint zaehlt als Verifikation, nicht als file_change
+        cls, _, _ = code_tools.shell_action_class("npm run lint")
+        self.assertEqual(cls, "test")
 
     def test_shell_classify_service_elevated(self):
         kind, risk = code_tools.shell_classify("npm run service:install")
@@ -123,6 +158,11 @@ class CodeToolsTests(unittest.TestCase):
             "RunCommand", {"command": "git status"}
         )
         self.assertEqual(d2["action"], "allow")
+        d2b = code_tools.permission_decision(
+            "RunCommand", {"command": "npm run lint"}
+        )
+        self.assertEqual(d2b["action"], "allow")
+        self.assertEqual(d2b.get("action_class"), "test")
         d3 = code_tools.permission_decision(
             "RunCommand", {"command": "git push"}
         )
@@ -176,6 +216,14 @@ class CodeToolsTests(unittest.TestCase):
         self.assertEqual(res["exit_code"], 0)
         self.assertIn("a", res["stdout"])
         self.assertIn("b", res["stdout"])
+
+    def test_run_command_glob_expands(self):
+        code_tools.write_file("g1.txt", "a\n")
+        code_tools.write_file("g2.txt", "b\n")
+        res = code_tools.run_command("ls g*.txt")
+        self.assertEqual(res["exit_code"], 0)
+        self.assertIn("g1.txt", res["stdout"])
+        self.assertIn("g2.txt", res["stdout"])
 
     def test_run_command_echo(self):
         res = code_tools.run_command("echo hello-code")
@@ -246,6 +294,7 @@ class CodeToolsTests(unittest.TestCase):
 
     def test_config_max_rounds_default(self):
         self.assertGreaterEqual(int(config.CODE_MAX_ROUNDS), 32)
+        self.assertGreaterEqual(int(config.AGENT_MAX_ROUNDS), 8)
 
     def test_workspace_roots_only_existing(self):
         roots = code_tools.workspace_roots()
@@ -327,6 +376,14 @@ class AgentToolsExtTests(unittest.TestCase):
         self.assertTrue(tool_registry.TOOL_MAP["MessageSend"]["write"])
         self.assertFalse(tool_registry.TOOL_MAP["WikiStatus"]["write"])
         self.assertFalse(tool_registry.TOOL_MAP["BrowseUrl"]["write"])
+
+    def test_read_pdf_description_allows_followup_ingest(self):
+        desc = tool_registry.TOOL_MAP["ReadPdf"]["description"]
+        self.assertNotIn("Kein Ingest", desc)
+        self.assertIn("Lesen erlaubt", desc)
+        self.assertIn("CreateNote/ApplyEdit", desc)
+        self.assertIn("Nie PDF-Datei schreiben", desc)
+        self.assertFalse(tool_registry.TOOL_MAP["ReadPdf"]["write"])
 
     def test_wiki_status_runs(self):
         from core import vault_tools

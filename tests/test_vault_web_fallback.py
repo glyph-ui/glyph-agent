@@ -191,6 +191,54 @@ class PreviewHooksFallback(unittest.TestCase):
         self.assertEqual(res["status"], "success")
 
 
+class PreviewWeakEmbeddingTests(unittest.TestCase):
+    def test_fallback_when_only_weak_embedding_hits(self):
+        from core import config
+        import core.retrieval as retrieval_mod
+        import core.vault_tools as vault_tools_mod
+
+        old_find = retrieval_mod.vault_find
+        old_match = vault_tools_mod.match_vault_entries
+        old_paths = list(config.VAULT_PATHS)
+        old_path = config.VAULT_PATH
+        retrieval_mod.vault_find = lambda query, top_k=None, min_score=None, **kw: {
+            "status": "success",
+            "query": query,
+            "selected": 2,
+            "results": [
+                {"path": "/HSEQ Sync/x.md", "title": "x", "section": "", "text": "",
+                 "score": 0.40, "vector_score": 0.40, "keyword_score": 0.0},
+                {"path": "/HSEQ Sync/y.md", "title": "y", "section": "", "text": "",
+                 "score": 0.45, "vector_score": 0.45, "keyword_score": 0.0},
+            ],
+        }
+        vault_tools_mod.match_vault_entries = lambda q: []
+        config.VAULT_PATHS = []
+        config.VAULT_PATH = ""
+        komnet_hit = {
+            "id": "web:https://www.komnet.nrw.de/x",
+            "kind": "web",
+            "path": "https://www.komnet.nrw.de/x",
+            "title": "KomNet Antwort",
+            "excerpt": "KomNet",
+            "source": "komnet",
+        }
+        try:
+            with mock.patch.object(
+                vault_web_fallback,
+                "fallback_web_hits",
+                return_value={"hits": [komnet_hit], "tried": ["komnet"], "source": "komnet"},
+            ):
+                res = vault_preview.preview_vault_hits("zxqvwurpfj")
+        finally:
+            retrieval_mod.vault_find = old_find
+            vault_tools_mod.match_vault_entries = old_match
+            config.VAULT_PATHS = old_paths
+            config.VAULT_PATH = old_path
+        self.assertEqual(res["fallback"], "komnet")
+        self.assertEqual(res["hits"][0]["kind"], "web")
+
+
 class PreviewBudgetTests(unittest.TestCase):
     def test_named_hits_survive_hanging_vault_find(self):
         from core import config, vault_preview

@@ -194,6 +194,8 @@ CODE_SHELL_ALLOW = (
     else list(_CODE_SHELL_DEFAULT)
 )
 CODE_MAX_ROUNDS = int(os.environ.get("CODE_MAX_ROUNDS", "32"))
+CODE_MAX_TURNS = int(os.environ.get("CODE_MAX_TURNS", "18"))
+AGENT_MAX_ROUNDS = int(os.environ.get("AGENT_MAX_ROUNDS", "8"))
 # Gesamt-Zeichen für CODE-messages[] (system + Turns). 0 = kein Cap.
 CODE_MESSAGE_CHARS = int(os.environ.get("CODE_MESSAGE_CHARS", "64000"))
 

@@ -16,7 +16,7 @@ Ablauf für eine Nutzer-Anfrage:
 Sicherheit:
   - Whitelist via tool_registry (unbekannte Tools -> abgelehnt)
   - Pfad-Sicherheit via vault_tools
-  - Runden-Limit (Default 4) + Fehler-Kurzschluss
+  - Runden-Limit (Default 8, Env AGENT_MAX_ROUNDS) + Fehler-Kurzschluss
   - Schreib-Tools nur mit confirm-Callback, der im Chat-Flow den Nutzer fragt
 """
 from . import llm, tool_registry, log, config
@@ -27,7 +27,7 @@ class ClientCancelled(Exception):
     """Raised when the HTTP client disconnected (Abbruch) — stop further rounds."""
 
 
-MAX_ROUNDS = 4
+MAX_ROUNDS = int(getattr(config, "AGENT_MAX_ROUNDS", 8) or 8)
 _PDF_READ_LIMIT = 2
 _PDF_NAME_MATCH_MIN = 70
 # Query-Füller, die Dateinamen wie „DGUV Information …“ falsch treffen.

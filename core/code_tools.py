@@ -8,6 +8,7 @@ Kein VaultFind, keine Obsidian-Pfade — getrennte Sicherheitsdomäne vom Vault-
 from __future__ import annotations
 
 import difflib
+import glob
 import os
 import re
 import shlex
@@ -648,7 +649,6 @@ def write_file(path, content):
 # Hart verboten — nie, auch nicht nach Elevated-Freigabe
 _HARD_DENY_PATTERNS = [
     r"\brm\b",
-    r"\bmv\b",
     r"\bchmod\b",
     r"\bchown\b",
     r"\bsudo\b",
@@ -680,13 +680,90 @@ _ELEVATED_PATTERNS = [
     (r"\bgit\s+pull\b", "git pull — ändert lokalen Stand vom Remote"),
     (r"\bgit\s+fetch\b", "git fetch — holt Remote-Refs"),
     (r"^npm\s+run\s+service(:|\b)", "npm run service:* — LaunchAgent/Service"),
-    (r"(?:&&|\|\||[;|])", "Compound/Pipe (&& ; | ||)"),
+    (r"\bmv\b", "mv — verschiebt/umbenennt Dateien"),
 ]
+
+# Compound/Pipe nur AUSSERHALB von Quotes: `rg "a|b"` ist ein Suchmuster,
+# kein Pipe. Sonst verlangt jede Regex-Alternation eine Freigabe.
+_COMPOUND_RE = re.compile(r"(?:&&|\|\||[;|])")
+
+
+def _strip_quoted(cmd):
+    """Entfernt '...'- und "..."-Inhalte, damit Quotes nicht als Pipe zaehlen."""
+    out = []
+    quote = None
+    escaped = False
+    for ch in str(cmd or ""):
+        if escaped:
+            escaped = False
+            continue
+        if quote and ch == "\\":
+            escaped = True
+            continue
+        if quote:
+            if ch == quote:
+                quote = None
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            continue
+        out.append(ch)
+    return "".join(out)
 
 # Legacy alias for tests
 _DENY_PATTERNS = list(_HARD_DENY_PATTERNS) + [
     r"\bgit\s+push\b",  # still "denied" without elevated_ok via classify
 ]
+
+
+def _split_pipes(cmd):
+    """Pipe-Segmente (Quotes bleiben erhalten). None bei &&/||/;/& oder ohne Pipe."""
+    segs, buf = [], []
+    quote = None
+    escaped = False
+    s = str(cmd or "")
+    i = 0
+    while i < len(s):
+        ch = s[i]
+        if escaped:
+            buf.append(ch); escaped = False; i += 1; continue
+        if quote and ch == "\\":
+            buf.append(ch); escaped = True; i += 1; continue
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+            i += 1; continue
+        if ch in ("'", '"'):
+            quote = ch; buf.append(ch); i += 1; continue
+        if ch == "|":
+            if i + 1 < len(s) and s[i + 1] == "|":
+                return None
+            segs.append("".join(buf).strip()); buf = []; i += 1; continue
+        if ch in ("&", ";"):
+            return None
+        buf.append(ch); i += 1
+    segs.append("".join(buf).strip())
+    segs = [x for x in segs if x]
+    return segs if len(segs) > 1 else None
+
+
+def _readonly_pipe(cmd):
+    """True, wenn jede Pipe-Stufe erlaubt UND nur read/test ist.
+
+    Beispiele: `wc -l x | sort -nr | head -3` -> True; `ls | npm install x` -> False.
+    """
+    segs = _split_pipes(cmd)
+    if not segs:
+        return False
+    for seg in segs:
+        kind, _ = shell_classify(seg)
+        if kind != "allow":
+            return False
+        cls, _k, _r = shell_action_class(seg)
+        if cls not in ("read", "test"):
+            return False
+    return True
 
 
 def _default_allow_patterns():
@@ -714,14 +791,18 @@ def shell_action_class(command):
         return "network", kind, reason
     if kind == "elevated":
         return "deploy", kind, reason
+    # sed ohne -i liest nur; mit -i schreibt es.
+    if re.search(r"^sed\\b", cmd) and not re.search(r"\\s-i(\\s|$)", cmd):
+        return "read", kind, reason
     if re.search(
-        r"^(npm\s+(test|run\s+test(:|\b))|pytest|python3?\s+-m\s+(pytest|unittest))\b",
+        r"^(npm\s+(test|run\s+(test(:|\b)|lint\b|typecheck\b|check\b|smoke\b))|pytest|python3?\s+-m\s+(pytest|unittest))\b",
         cmd,
         re.IGNORECASE,
     ):
         return "test", kind, reason
     if re.search(
-        r"^(ls|pwd|echo|cat|head|tail|wc|rg|grep|find|diff|"
+        r"^(ls|pwd|echo|cat|head|tail|wc|rg|grep|find|diff|sort|uniq|cut|tr|"
+        r"stat|file|basename|dirname|realpath|which|awk|"
         r"git\s+(status|diff|log|show|branch|rev-parse|remote)|"
         r"python3? --version|node --version|npm --version|"
         r"npm\s+(ls|view|outdated|pack))\b",
@@ -749,6 +830,10 @@ def shell_classify(command):
     for pat in _HARD_DENY_PATTERNS:
         if re.search(pat, cmd, re.IGNORECASE):
             return "deny", f"hart verboten: {pat}"
+    if _readonly_pipe(cmd):
+        return "allow", None
+    if _COMPOUND_RE.search(_strip_quoted(cmd)):
+        return "elevated", "Compound/Pipe (&& ; | ||)"
     for pat, risk in _ELEVATED_PATTERNS:
         if re.search(pat, cmd, re.IGNORECASE):
             return "elevated", risk
@@ -806,9 +891,10 @@ def run_command(command, cwd=None, timeout=None, allow_elevated=False):
         )
 
     timeout_s = int(timeout or getattr(config, "CODE_SHELL_TIMEOUT", 60) or 60)
-    timeout_s = max(1, min(timeout_s, 120))
+    timeout_s = max(1, min(timeout_s, 300))
 
-    use_shell = kind == "elevated" and bool(
+    # Pipes brauchen eine Shell: elevated Compound ODER erlaubte read-only-Pipe.
+    use_shell = bool(
         re.search(r"(?:&&|\|\||[;|])", (command or "").strip())
     )
     if use_shell:
@@ -821,6 +907,19 @@ def run_command(command, cwd=None, timeout=None, allow_elevated=False):
             raise ValueError(f"Befehl nicht parsbar: {e}") from e
         if not argv:
             raise ValueError("leerer Befehl")
+        # Globs wie die Shell expandieren — nur Dateimuster, keine Substitution.
+        if any("$" not in a and any(c in a for c in "*?[") for a in argv[1:]):
+            expanded = [argv[0]]
+            for a in argv[1:]:
+                if "$" not in a and any(c in a for c in "*?["):
+                    hits = sorted(glob.glob(os.path.join(abs_cwd, a)))
+                    if hits:
+                        expanded.extend(
+                            os.path.relpath(h, abs_cwd) for h in hits
+                        )
+                        continue
+                expanded.append(a)
+            argv = expanded
         bin_name = os.path.basename(argv[0])
 
     env = os.environ.copy()
@@ -914,6 +1013,16 @@ def permission_decision(tool_name, args):
         return {
             "action": "allow",
             "reason": "",
+            "elevated": False,
+            "risk": "",
+            "preview": "",
+        }
+
+    # Glyph-Aufgabe schließen: SoT ~/.glyph/tasks, kein Workspace-Root, kein Popup.
+    if name == "TaskFinish":
+        return {
+            "action": "allow",
+            "reason": "Aufgabe-Abschluss (Artefakt + done)",
             "elevated": False,
             "risk": "",
             "preview": "",
@@ -1083,10 +1192,11 @@ def permission_decision(tool_name, args):
                 "outside_task": extra["outside_task"],
                 "hint": extra["hint"],
             }
-        if action_class == "read":
+        if action_class in ("read", "test"):
             return {
                 "action": "allow",
-                "reason": "Lesen-Shell unter r+w",
+                "reason": "Lesen/Verifikation unter r+w",
+                "action_class": action_class,
                 "elevated": False,
                 "risk": "",
                 "preview": preview,
@@ -1335,4 +1445,29 @@ def vault_write(path, content):
         return {"ok": True, "path": res.get("path"), "action": "create", "created": res.get("created")}
     except Exception as e:
         return {"ok": False, "error": str(e)[:300]}
+
+
+def task_finish(task_id, content, summary=""):
+    """Schließt eine Glyph-Aufgabe: Artefakt auf Disk + status=done.
+
+    Kein Workspace-Root. SoT ~/.glyph/tasks.json + ~/.glyph/tasks/<id>.md.
+    """
+    from . import tasks as _tasks
+
+    tid = str(task_id or "").strip()
+    if not tid:
+        return {"ok": False, "error": "TaskFinish braucht id (Zeile Id: in der Meldung)."}
+    try:
+        item = _tasks.finish_item(tid, content=content, summary=summary, by="_code")
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    except OSError as e:
+        return {"ok": False, "error": f"Artefakt nicht schreibbar: {e}"}
+    return {
+        "ok": True,
+        "id": item["id"],
+        "status": item["status"],
+        "artifact": item.get("artifact") or "",
+        "summary": item.get("summary") or "",
+    }
 

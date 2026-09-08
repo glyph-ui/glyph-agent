@@ -14,7 +14,6 @@ PREVIEW_BUDGET_S = 70
 INDEX_WAIT_WITH_HITS_S = 4.0
 INDEX_WAIT_EMPTY_S = 20.0
 
-
 def preview_vault_hits(query, top_k=8, budget_s=None, now=None):
     """Namens-Treffer auf Disk + VaultFind-Eltern (+ ListVaultDir bei Inventar).
 
@@ -200,9 +199,17 @@ def preview_vault_hits(query, top_k=8, budget_s=None, now=None):
     other_files = [h for h in files if h.get("id") not in named_file_ids]
     hits = named_files + top_folders + other_folders + named_first[4:] + other_files
     hits = hits[:_MAX_HITS]
+    # Starke Treffer = Namens-Treffer (>=70) oder Embedding >= _EMBED_FLOOR.
+    # Schwache Nur-Embedding-Treffer (~0.35-0.5, auch bei Nonsens-Queries)
+    # duerfen den KomNet/DGUV-Web-Fallback nicht blockieren.
+    # Namens-Treffer (Datei/Ordner auf Disk) sind das verlaessliche Signal.
+    # Die Embeddings sind derzeit zu flach (Nonsens ~0.5-0.66), um eine
+    # absolute Schwelle zu rechtfertigen — ohne Namens-Treffer gilt der
+    # Vault als leer und der Web-Fallback darf ran.
+    strong = bool(named_files or named_first)
     fallback = None
     tried = []
-    if not hits:
+    if not strong:
         from . import vault_web_fallback
 
         fb = vault_web_fallback.fallback_web_hits(
