@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
-from . import config, log, tool_loop
+from . import config, llm, log, tool_loop
 
 TZ = ZoneInfo("Europe/Berlin")
 HSEQ_ROOT = "/Users/lxndrhbrt/ObsidianVaults/HSEQ Sync"
@@ -53,6 +53,17 @@ def get_external_max_chars() -> int:
     if o is not None:
         return int(o)
     return int(getattr(config, "EXTERNAL_MAX_CHARS", 4000) or 4000)
+
+
+def max_rounds_for(item: Optional[dict]) -> int:
+    """Tool-Runden pro Lauf. Default 24; Item darf 1–24 setzen."""
+    try:
+        n = int((item or {}).get("max_rounds") or 24)
+    except (TypeError, ValueError):
+        n = 24
+    if n < 1 or n > 24:
+        return 24
+    return n
 
 
 def _now() -> datetime:
@@ -235,6 +246,12 @@ def _normalize_item(raw: dict) -> Optional[dict]:
         out["pass"] = finish
     if script:
         out["script"] = os.path.basename(script)
+    try:
+        mr = int(raw.get("max_rounds") or 0)
+    except (TypeError, ValueError):
+        mr = 0
+    if 1 <= mr <= 24:
+        out["max_rounds"] = mr
     return out
 
 
@@ -394,9 +411,42 @@ def _first_line_leer(answer: str) -> bool:
     return head == "LEER" or head.startswith("LEER ") or head.startswith("LEER:")
 
 
+def answer_is_bare_tool(answer: str) -> bool:
+    """True, wenn die Ausgabe nur ein Werkzeug-Aufruf ist und kein Satz."""
+    text = (answer or "").strip()
+    if not text:
+        return False
+    from . import tool_registry
+    if tool_registry.try_parse_tool_call(text) is None:
+        return False
+    if tool_registry.looks_like_dsml(text):
+        return not (tool_registry.prose_before_dsml(text) or "").strip()
+    body = text
+    if body.startswith("```"):
+        body = body.split("\n", 1)[-1]
+        if body.rstrip().endswith("```"):
+            body = body.rstrip()[:-3].strip()
+    return body.startswith("{")
+
+
+def eingang_reads_done(tool_calls) -> bool:
+    """True, wenn dieser Lauf den Eingang gelistet und das Verarbeitungslog gelesen hat."""
+    listed = False
+    logged = False
+    for call in tool_calls or []:
+        if not call.get("ok") or call.get("canceled"):
+            continue
+        path = str((call.get("args") or {}).get("path") or "").replace("\\", "/").lower()
+        if call.get("tool") == "ListVaultDir" and "arbeitsfluss/eingang" in path:
+            listed = True
+        if call.get("tool") == "ReadNote" and "verarbeitungslog" in path:
+            logged = True
+    return listed and logged
+
+
 def classify_run_status(ok: bool, answer: str, has_pass: bool) -> str:
     """ok | empty | error. LEER nur wenn ein Fertig-Kriterium gesetzt ist."""
-    if not ok:
+    if not ok or answer_is_bare_tool(answer):
         return "error"
     if has_pass:
         if _first_line_leer(answer):
@@ -490,14 +540,28 @@ def run_item(item_id: str, force: bool = False) -> dict:
         if script_path:
             result = _run_script_job(script_path, timeout_s=600)
         else:
-            result = tool_loop.run(
-                message_for_run(item),
-                confirm=make_confirm(bool(item.get("allow_write"))),
-                max_rounds=24,
-            )
+            # HSEQ-Modelljobs auf dem Cloud-Hop. Der Chat-Singleton (local) bleibt.
+            # Zwei-Runden-Grenze gilt nur, solange der Kopf lokal ist.
+            eingang = item_id == "td-eingang"
+            with llm.cloud_job():
+                result = tool_loop.run(
+                    message_for_run(item),
+                    confirm=make_confirm(bool(item.get("allow_write"))),
+                    max_rounds=max_rounds_for(item),
+                    precheck=not eingang,
+                    step_guard=eingang,
+                )
         tool_ok = bool(result.get("ok", True))
         answer = result.get("answer") or ""
         status = classify_run_status(tool_ok, answer, bool(item.get("pass")))
+        # „keine Änderungen“ nur, wenn Ordner und Log in diesem Lauf wirklich gelesen wurden.
+        if (
+            item_id == "td-eingang"
+            and status != "error"
+            and "HSEQ: keine Änderungen" in answer
+            and not eingang_reads_done(result.get("tool_calls"))
+        ):
+            status = "error"
         ok = status != "error"
         # Scheduled: Stamp bei ok/empty (Retry am selben Tag nur bei Fehler). force: Stamp immer.
         use_stamp = stamp if (ok or force) else None
@@ -571,15 +635,12 @@ _SEED_PROMPTS = {
         "time": "18:00",
         "kind": "daily",
         "prompt": (
-            "HSEQ-Tagesprüfung (glyph-agent). Öffne und führe den Abschnitt "
-            f"'Automatische Tagesprüfung' aus der Datei "
-            f"'{HSEQ_ROOT}/Vorlagen/Audit/Prompt - Auditnotizen auswerten und Auditbericht.md' "
-            "vollständig aus.\n\n"
-            "Eingang prüfen, VORLAGE-Dateien, SHA-256 gegen Verarbeitungslog, "
-            "Berichte nur in Fertig/. Keine Personennamen. Rohnotizen nicht ändern. "
-            "Absolute Pfade unter "
-            f"{HSEQ_ROOT}/. Nichts zu tun → 'HSEQ: keine Änderungen'. "
-            "Selbstständig, keine Rückfragen."
+            "HSEQ-Eingang: genau EINE Rohnotiz. Nach der Notiz sofort ApplyEdit — nicht suchen.\n"
+            "ReadNote nur mit EXAKTEN Dateinamen: "
+            "'Qualitätsmanagement/Audits/2. Audit - MBVD 9001 - Kopf.md' usw. "
+            "Kein Archiv. SOFORT ApplyEdit Bericht+Maßnahmenplan in Fertig/, dann Log. "
+            "Keine Personennamen. Pfade unter "
+            f"{HSEQ_ROOT}/."
         ),
     },
     "hseq-handover": {

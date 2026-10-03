@@ -15,15 +15,15 @@ _BINDING_KEYS = (
     "OPENROUTER_API_KEY",
     "XAI_API_KEY",
 )
-_BINDING_SETTINGS = ("DIRECT_API_URL", "GLYPH_AGENT_URL")
+_BINDING_SETTINGS = ("DIRECT_API_URL", "OPENROUTER_URL", "GLYPH_AGENT_URL")
 
-# Direkt-Hop-Variablen, für die die Graph-Einstellung (Glyph-UI bindings.json)
+# Hop-Variablen, für die die Graph-Einstellung (Glyph-UI bindings.json)
 # den .env-Wert ersetzen DARF (überschreibt statt nur leere Slots zu füllen).
 # Grund: Der User stellt URL/Key über den Graphen ein; ein veralteter .env-Wert
-# (z. B. api.deepseek.com) darf nicht gegen die Absicht gewinnen und mit einem
-# OpenRouter-Key (sk-or-…) gegen die DeepSeek-URL 401 erzeugen.
+# (z. B. api.deepseek.com oder openrouter.ai) darf nicht gegen die Absicht
+# gewinnen — sonst 401, weil Key und Host nicht zusammenpassen.
 # Siehe memory 2026-08-16: „Graph-API-Einstellung wird von glyph-agent ignoriert“.
-_BINDING_OVERWRITE_SETTINGS = ("DIRECT_API_URL",)
+_BINDING_OVERWRITE_SETTINGS = ("DIRECT_API_URL", "OPENROUTER_URL")
 _BINDING_OVERWRITE_KEYS = ("DIRECT_API_KEY", "OPENROUTER_API_KEY")
 
 

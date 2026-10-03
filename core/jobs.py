@@ -47,21 +47,16 @@ JOBS: Dict[str, Dict[str, Any]] = {
             "Vorlagen/Audit/Prompt - Auditnotizen auswerten und Auditbericht.md",
         ),
         "message": (
-            "HSEQ-Tagesprüfung (glyph-agent Job). Öffne die Datei "
-            f"'{HSEQ_ROOT}/Vorlagen/Audit/Prompt - Auditnotizen auswerten und Auditbericht.md' "
-            "und führe den Abschnitt 'Automatische Tagesprüfung' vollständig aus: "
-            "Eingang prüfen, VORLAGE-Dateien zu Blaupausen, Rohnotizen per SHA-256 gegen "
-            "Verarbeitungslog, Neues/Geändertes zu Berichten in Fertig/.\n\n"
-            "WICHTIG:\n"
-            "(1) Fertiger Bericht: 4 Spalten Kap./Normforderung/Dokument-Datum/Ergebnis — "
-            "keine Spalte 'Zu prüfendes Dokument'.\n"
-            "(2) Keine Personennamen, nur Rolle/Funktion.\n"
-            "(3) Rohnotizen in Eingang/ nie ändern/löschen.\n"
-            "(4) Archiv nur bei Berichten älter 60 Tage; kein trash.\n"
-            "(5) Absolute Pfade unter "
-            f"{HSEQ_ROOT}/ …\n"
-            "(6) Nichts zu tun → antworte nur: HSEQ: keine Änderungen\n"
-            "Sonst kurze Zusammenfassung. Selbstständig, keine Rückfragen."
+            "HSEQ-Eingang: genau EINE Rohnotiz. Nach der Notiz sofort CreateNote — nicht suchen.\n"
+            "Nur: ListVaultDir Eingang einmal, Log, FileHash, ReadNote Rohnotiz, "
+            "ReadNote Blaupause Kopf/Überschrift/Kapitel, dann SOFORT CreateNote "
+            "Auditbericht + Maßnahmenplan in 00 Arbeitsfluss/Fertig/ (nie bestehende Berichte ApplyEdit), "
+            "dann ApplyEdit nur Verarbeitungslog.\n"
+            "Kein Archiv, kein VaultFind, kein zweites ListVaultDir, nicht den MASTER-PROMPT lesen.\n"
+            "Logo ![[MBVD-TUeV-Sued-Pluspunkt.jpg]] stehen lassen. 4 Spalten. "
+            "Keine Personennamen. Rohnotizen nicht ändern. "
+            f"Pfade unter {HSEQ_ROOT}/. "
+            "Nichts: 'HSEQ: keine Änderungen'. Selbstständig, keine Rückfragen."
         ),
         "external_max_chars": 48000,
         "timeout_hint_s": 1800,

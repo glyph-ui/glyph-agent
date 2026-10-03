@@ -2,11 +2,12 @@
 """
 DirectProvider — OpenAI-kompatibler Primär-Hop (DeepSeek, Grok, …).
 
-Kette (gegrillt 2026-08-12):
+Kette (gegrillt 2026-08-12, Router-Host 2026-09-07):
   1. DIRECT_API_URL + DIRECT_API_KEY (Alias: DEEPSEEK_API_KEY)
      Modell ohne Slash = Direct-ID, z. B. deepseek-v4-flash-vision-exp
-  2. Bei Ausfall: OpenRouter + OPENROUTER_API_KEY
-     Modell mit Slash = OpenRouter-Slug, z. B. deepseek/deepseek-v4-flash-0731
+  2. Bei Ausfall: Router (OPENROUTER_URL + OPENROUTER_API_KEY)
+     Modell mit Slash = Router-Slug. Host default openrouter.ai;
+     Orca: https://api.orcarouter.ai/v1
 
 Kein Tiny/Free. Ohne Direct-Key und ohne OpenRouter-Key: harter Fehler.
 """
@@ -46,9 +47,10 @@ class DirectProvider(OpenRouterProvider):
             api_key=direct_key,
             fallback_model=fallback_model,
         )
-        self._or_url = os.environ.get(
-            "OPENROUTER_URL",
-            getattr(_cfg, "OPENROUTER_URL", "https://openrouter.ai/api/v1"),
+        self._or_url = (
+            getattr(_cfg, "OPENROUTER_URL", None)
+            or os.environ.get("OPENROUTER_URL")
+            or "https://openrouter.ai/api/v1"
         )
         self._or_key = os.environ.get("OPENROUTER_API_KEY", "")
 

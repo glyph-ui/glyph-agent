@@ -95,6 +95,14 @@ class KnowledgeToolsTests(unittest.TestCase):
             d = code_tools.permission_decision(name, {})
             self.assertEqual(d["action"], "allow", name)
 
+    def test_permission_taskfinish_allow_without_grant(self):
+        d = code_tools.permission_decision("TaskFinish", {
+            "id": "abc123",
+            "content": "# ok",
+            "summary": "fertig",
+        })
+        self.assertEqual(d["action"], "allow")
+
 
 if __name__ == "__main__":
     unittest.main()

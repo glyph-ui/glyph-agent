@@ -92,6 +92,16 @@ class RepeatKeyTests(unittest.TestCase):
     def test_write_not_tracked(self):
         self.assertIsNone(code_loop.repeat_tool_key("WriteFile", {"path": "a.py"}))
 
+    def test_readfile_same_path_ignores_offset(self):
+        a = code_loop.repeat_tool_key("ReadFile", {"path": "core/code_loop.py", "offset": 600, "limit": 110})
+        b = code_loop.repeat_tool_key("ReadFile", {"path": "core/code_loop.py", "offset": 1470, "limit": 130})
+        c = code_loop.repeat_tool_key("ReadFile", {"path": "core/config.py", "offset": 1, "limit": 50})
+        self.assertEqual(a, b)
+        self.assertNotEqual(a, c)
+
+    def test_taskfinish_not_tracked(self):
+        self.assertIsNone(code_loop.repeat_tool_key("TaskFinish", {"id": "abc"}))
+
 
 class PickTestTests(unittest.TestCase):
     def test_package_json_npm(self):
@@ -148,6 +158,16 @@ class CodeRoleTests(unittest.TestCase):
         self.assertIn("einmal-job", text)
         self.assertIn("EINMAL-JOB", text)
 
+    def test_agent_role_allows_pdf_ingest(self):
+        from core.tool_loop import _role
+
+        text = _role()
+        self.assertNotIn("Kein PDF-Ingest/Schreiben", text)
+        self.assertIn("PDF-Ingest", text)
+        self.assertIn("vault-ingest", text)
+        self.assertIn("Nie PDF-Datei schreiben", text)
+        self.assertIn("Privat nie", text)
+
     def test_role_follows_live_code_model(self):
         old = getattr(config, "CODE_OPENROUTER_MODEL", None)
         try:
@@ -163,9 +183,11 @@ class CodeRoleTests(unittest.TestCase):
         old = getattr(config, "CODE_OPENROUTER_MODEL", None)
         try:
             config.CODE_OPENROUTER_MODEL = "deepseek-v4-flash-vision-exp"
-            text = code_loop.code_role()
+            with patch("core.runtime_models._provider_for", return_value="direct"):
+                text = code_loop.code_role()
             self.assertIn("deepseek-v4-flash-vision-exp", text)
             self.assertIn("DeepSeek V4 Vision", text)
+            self.assertIn("TaskFinish", text)
         finally:
             config.CODE_OPENROUTER_MODEL = old
 

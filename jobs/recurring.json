@@ -3,38 +3,6 @@
   "migrated_hseq_v1": true,
   "items": [
     {
-      "id": "td-eingang",
-      "title": "HSEQ Eingang → Fertig",
-      "prompt": "HSEQ-Tagesprüfung (glyph-agent). Öffne und führe den Abschnitt 'Automatische Tagesprüfung' aus der Datei '/Users/lxndrhbrt/ObsidianVaults/HSEQ Sync/Vorlagen/Audit/Prompt - Auditnotizen auswerten und Auditbericht.md' vollständig aus.\n\nEingang prüfen, VORLAGE-Dateien, SHA-256 gegen Verarbeitungslog, Berichte nur in Fertig/. Keine Personennamen. Rohnotizen nicht ändern. Absolute Pfade unter /Users/lxndrhbrt/ObsidianVaults/HSEQ Sync/. Nichts zu tun → 'HSEQ: keine Änderungen'. Selbstständig, keine Rückfragen.",
-      "schedule": {
-        "kind": "daily",
-        "time": "18:00"
-      },
-      "paused": false,
-      "allow_write": true,
-      "created_at": "2026-08-08T23:03:05+02:00",
-      "last_run_at": "2026-08-29T18:08:47+02:00",
-      "last_status": "ok",
-      "last_answer_preview": "Die Aufgabe: HSEQ-Tagesprüfung ausführen. Ich muss den Abschnitt \"Automatische Tagesprüfung\" aus der Vorlage-Datei ausführen:\n\n1. Alle Dateien in `00 Arbeitsfluss/Eingang/` auflisten (außer README.md).\n2. VORLAGE-Dateien zuerst prüfen.\n3. Abgleich über Verarbeitungslog mit SHA-256.\n4. Bereinigung (lazy): Fertige Berichte älter als ~7 Tage löschen — ABER: Chat-Vertrag sagt \"Chat: nie löschen, nie l",
-      "last_stamp": "2026-08-29"
-    },
-    {
-      "id": "td-handover",
-      "title": "HSEQ Handover Daily",
-      "prompt": "HSEQ-Handover. Öffne und führe aus: /Users/lxndrhbrt/ObsidianVaults/HSEQ Sync/Vorlagen/Jobs/PROMPT-Handover.md\nSchreibe nur: /Users/lxndrhbrt/ObsidianVaults/HSEQ Sync/00 Arbeitsfluss/Daily/YYYY-MM-DD.md (heute Europe/Berlin). Quellen: Eingang/, Fertig/, Verarbeitungslog. Daily beginnt mit Briefing 3 Zeilen: Neu / Offen / Konflikt-Stale. Antwort = dieselben 3 Zeilen. Eingang-mit-Log = Beleg, nicht Offen. Keine Personennamen. Alles leer: 'Handover: ruhig (YYYY-MM-DD)' + Briefing mit —. Selbstständig, keine Rückfragen.",
-      "schedule": {
-        "kind": "daily",
-        "time": "18:30"
-      },
-      "paused": false,
-      "allow_write": true,
-      "created_at": "2026-08-08T23:03:05+02:00",
-      "last_run_at": "2026-08-29T18:40:58+02:00",
-      "last_status": "ok",
-      "last_answer_preview": "{\"tool\": \"CreateNote\", \"args\": {\"path\": \"HSEQ Sync/00 Arbeitsfluss/Daily/2026-08-29.md\", \"content\": \"---\\ntags: [hseq, handover, daily]\\ntype: handover\\ndate: 2026-08-29\\ngenerated: auto\\n---\\n\\n# Handover · 2026-08-29\\n\\n## Briefing (3 Zeilen)\\n- Neu: —\\n- Offen: —\\n- Konflikt/Stale: —\\n\\n## Erledigt\\n- Keine neuen Verarbeitungen heute. Bestand unverändert.\\n\\n## Offen / blockiert\\n- —\\n\\n## Näch",
-      "last_stamp": "2026-08-29"
-    },
-    {
       "id": "td-lernen",
       "title": "HSEQ Aus Fertig lernen",
       "prompt": "HSEQ Aus-Fertig-lernen. Öffne und führe aus: /Users/lxndrhbrt/ObsidianVaults/HSEQ Sync/Vorlagen/Jobs/PROMPT-Aus-Fertig-lernen.md\nMaximal EINE kleine Änderung an Vorlage oder Themen-Notiz — oder nichts. Keine neuen Berichte. Nichts: 'Aus Fertig lernen: nichts Neues'. Selbstständig, keine Rückfragen.",
@@ -46,10 +14,10 @@
       "paused": false,
       "allow_write": true,
       "created_at": "2026-08-08T23:03:05+02:00",
-      "last_run_at": "2026-08-28T19:06:24+02:00",
+      "last_run_at": "2026-10-02T20:23:08+02:00",
       "last_status": "ok",
-      "last_answer_preview": "Ich habe den Job-Prompt, die letzten beiden UWS-Berichte (Senger 15.07., Hartmann 13.07.) und die Vorlage `Begehung - Umweltschutz.md` gelesen.\n\n**Befund (wiederkehrende Lücke):** Beide Berichte haben „Nein\" bei der **Behälter-Kennzeichnung**:\n- Senger: 6.1.2 Behälter nicht gekennzeichnet, 6.4.1 Sammelbehälter nicht beschriftet\n- Hartmann: 6.1.2 Behälter nicht gekennzeichnet, 6.4.1 Sammelbehälter ",
-      "last_stamp": "2026-08-28"
+      "last_answer_preview": "Aus Fertig lernen: nichts Neues\n\nEin Änderungsbedarf wäre nur bei einer wiederkehrenden Vorlagen-/Themen-Lücke belegbar gewesen. Der geprüfte Bericht `/HSEQ Sync/00 Arbeitsfluss/Fertig/2026-09-22 Auditbericht - Musterstadt.md` folgt dem gefrorenen Form-SoT (4 Spalten, Typ-B-Hinweis, Maßnahmenplan-Zeile) und hält die Prüfmittel in 7.1.5 — konsistent mit `Vorlagen/Jobs/PROMPT-Aus-Fertig-lernen.md`, kein An",
+      "last_stamp": "2026-10-02"
     },
     {
       "id": "td-memory",
@@ -62,10 +30,10 @@
       "paused": false,
       "allow_write": false,
       "created_at": "2026-08-09T11:33:15+02:00",
-      "last_run_at": "2026-08-30T03:11:06+02:00",
+      "last_run_at": "2026-10-03T03:08:38+02:00",
       "last_status": "ok",
-      "last_answer_preview": "Memory-Hygiene 2026-08-30\nDaily: neu (2026-08-30.md)\nMEMORY PII: 0 → clean",
-      "last_stamp": "2026-08-30",
+      "last_answer_preview": "Memory-Hygiene 2026-10-03\nDaily: neu (2026-10-03.md)\nMEMORY PII: 0 → clean",
+      "last_stamp": "2026-10-03",
       "script": "memory_hygiene.py"
     },
     {
@@ -79,10 +47,10 @@
       "paused": false,
       "allow_write": false,
       "created_at": "2026-08-20T23:20:00+02:00",
-      "last_run_at": "2026-08-30T03:26:07+02:00",
+      "last_run_at": "2026-10-03T03:23:39+02:00",
       "last_status": "ok",
-      "last_answer_preview": "Wiki-Hygiene (2026-08-30 03:26 Europe/Berlin) [apply]\nPfad: /Users/lxndrhbrt/ObsidianVaults/memory-wiki\nSeiten: 19 | Sources: 12\nPlan: 0 | Moved: 0 | Purged: 0 | Link-Fixes: 0\nDead Links: 66 | Orphan Sources: 0\nPII Hits: 10 | Secrets: 0\nDigest: 31 Seiten (+2, stale-index 0)",
-      "last_stamp": "2026-08-30",
+      "last_answer_preview": "Wiki-Hygiene (2026-10-03 03:23 Europe/Berlin) [apply]\nPfad: /Users/lxndrhbrt/ObsidianVaults/memory-wiki\nSeiten: 24 | Sources: 12\nPlan: 0 | Moved: 0 | Purged: 0 | Link-Fixes: 0\nDead Links: 67 | Orphan Sources: 0\nPII Hits: 10 | Secrets: 0\nDigest: 36 Seiten (+0, stale-index 0)",
+      "last_stamp": "2026-10-03",
       "script": "wiki_hygiene.py"
     },
     {
@@ -96,11 +64,44 @@
       "paused": false,
       "allow_write": false,
       "created_at": "2026-08-09T11:33:15+02:00",
-      "last_run_at": "2026-08-30T06:11:18+02:00",
+      "last_run_at": "2026-10-03T06:08:46+02:00",
       "last_status": "ok",
-      "last_answer_preview": "Session-Cleanup 2026-08-30: exit=0\n{\"agentId\": \"main\", \"storePath\": \"/Users/lxndrhbrt/.openclaw/agents/main/sessions/sessions.json\", \"mode\": \"enforce\", \"dryRun\": false, \"beforeCount\": 22, \"afterCount\": 22, \"repaired\": 0, \"missing\": 0, \"dmScopeRetired\": 0, \"modelRunPruned\": 0, \"pruned\": 0, \"capped\": 0, \"unreferencedArtifacts\": {\"scannedFiles\": 270, \"removedFiles\": 0, \"freedBytes\": 0, \"olderThanMs\":",
-      "last_stamp": "2026-08-30",
+      "last_answer_preview": "Session-Cleanup 2026-10-03: skip — openclaw CLI nicht gefunden (Glyph-only ok)",
+      "last_stamp": "2026-10-03",
       "script": "session_cleanup_legacy.py"
+    },
+    {
+      "id": "td-eingang",
+      "title": "HSEQ Eingang → Fertig",
+      "prompt": "HSEQ-Eingang: genau EINE Rohnotiz. Nach der Notiz sofort CreateNote — nicht suchen, nicht ApplyEdit auf bestehende Berichte.\nNur diese Tools, in dieser Reihenfolge:\n1) ListVaultDir einmal: 00 Arbeitsfluss/Eingang (README ignorieren).\n2) ReadNote 00 Arbeitsfluss/Fertig/Verarbeitungslog.md — falls „Notiz nicht gefunden“: das Log NICHT selbst anlegen (der Watchdog stellt es wieder her), sondern exakt 'HSEQ: Verarbeitungslog fehlt' antworten und aufhören.\n3) FileHash der ersten Datei, die nicht im Log steht. Keine: antworte exakt 'HSEQ: keine Änderungen'.\n4) ReadNote dieser einen Rohnotiz.\n5) ReadNote mit diesen EXAKTEN Pfaden (nichts kürzen):\n   Qualitätsmanagement/Audits/2. Audit - MBVD 9001 - Kopf.md\n   Qualitätsmanagement/Audits/3. Audit - MBVD 9001 - Überschrift.md\n   Typ B (Notiz ab Kap. 7): Qualitätsmanagement/Audits/7. Audit - MBVD 9001 - Kapitel 7.md und Qualitätsmanagement/Audits/8. Audit - MBVD 9001 - Kapitel 8.md\n   Typ A: zusätzlich Qualitätsmanagement/Audits/4. Audit - MBVD 9001 - Kapitel 4.md bis 10. Audit - MBVD 9001 - Kapitel 10.md\n   Kein Archiv, kein anderes Fertig, kein VaultFind, kein zweites ListVaultDir, nicht den MASTER-PROMPT lesen.\n6) SOFORT CreateNote (nicht ApplyEdit) für zwei NEUE Dateien. Dateiname aus der Rohnotiz (Auditdatum + Standort), nicht das Laufdatum:\n   00 Arbeitsfluss/Fertig/DATUM Auditbericht - STANDORT.md\n   00 Arbeitsfluss/Fertig/DATUM Maßnahmenplan - STANDORT.md\n   Existiert der Pfad: nicht überschreiben, Log-Zeile auf den bestehenden Bericht, Ende.\n   Kopf 1:1 kopieren, Logo ![[MBVD-TUeV-Sued-Pluspunkt.jpg]] stehen lassen, 4 Spalten. Info-Spalte: Muster-Vorgabe aus den Kapiteldateien nicht übernehmen, nur den Text aus DIESER Rohnotiz; sonst leer. Ergebnis nur A:/F:/E: aus dieser Notiz. Typ B: Hinweis 'Kapitel 4–6 und 9–10 wurden im Hauptbetrieb mitgeprüft.'\n7) ApplyEdit NUR 00 Arbeitsfluss/Fertig/Verarbeitungslog.md (eine Zeile: Rohnotiz, Typ, Zeit, 12 Zeichen Hash, Berichtsname).\nKeine Personennamen. Rohnotizen nicht ändern. Pfade unter /Users/lxndrhbrt/ObsidianVaults/HSEQ Sync/. Selbstständig, keine Rückfragen.",
+      "schedule": {
+        "kind": "daily",
+        "time": "18:00"
+      },
+      "paused": true,
+      "allow_write": true,
+      "max_rounds": 16,
+      "created_at": "2026-08-08T23:03:05+02:00",
+      "last_run_at": "2026-10-02T21:27:56+02:00",
+      "last_status": "ok",
+      "last_answer_preview": "HSEQ: keine Änderungen",
+      "last_stamp": "2026-10-02"
+    },
+    {
+      "id": "td-handover",
+      "title": "HSEQ Handover Daily",
+      "prompt": "HSEQ-Handover. Öffne und führe aus: /Users/lxndrhbrt/ObsidianVaults/HSEQ Sync/Vorlagen/Jobs/PROMPT-Handover.md\nSchreibe nur: /Users/lxndrhbrt/ObsidianVaults/HSEQ Sync/00 Arbeitsfluss/Daily/YYYY-MM-DD.md (heute Europe/Berlin). Quellen: Eingang/, Fertig/, Verarbeitungslog. Daily beginnt mit Briefing 3 Zeilen: Neu / Offen / Konflikt-Stale. Antwort an Nutzer = dieselben 3 Zeilen. Eingang-mit-Log = Beleg, nicht Offen. Keine Personennamen. Alles leer: 'Handover: ruhig (YYYY-MM-DD)' + Briefing mit —. Selbstständig, keine Rückfragen.",
+      "schedule": {
+        "kind": "daily",
+        "time": "18:30"
+      },
+      "paused": true,
+      "allow_write": true,
+      "created_at": "2026-08-08T23:03:05+02:00",
+      "last_run_at": "2026-09-04T18:48:27+02:00",
+      "last_status": "ok",
+      "last_answer_preview": "Handover: ruhig (2026-09-04) — Neu: — · Offen: — · Konflikt/Stale: —",
+      "last_stamp": "2026-09-04"
     }
   ],
   "migrated_nightly_v1": true

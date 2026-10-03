@@ -13,7 +13,23 @@ an der Agenten-/Tool-Schicht etwas geändert wird:
 Die tatsächliche Provider-Implementierung liegt in core/providers/*.
 Diese Datei darf KEINE provider-spezifische Logik enthalten.
 """
+import contextvars
+from contextlib import contextmanager
+
 from .providers import factory
+
+# Job-Thread: Cloud-Hop, ohne den Chat-Singleton (oft local) umzuschalten.
+_job_cloud = contextvars.ContextVar("glyph_job_cloud", default=None)
+
+
+@contextmanager
+def cloud_job():
+    """Dieser Thread nutzt den Hybrid-Cloud-Hop. Andere Threads bleiben unverändert."""
+    token = _job_cloud.set(factory.cloud_provider("agent"))
+    try:
+        yield
+    finally:
+        _job_cloud.reset(token)
 
 
 def get_provider(kind="agent"):
@@ -22,7 +38,11 @@ def get_provider(kind="agent"):
     kind="code" → Provider, der für ^_Code aufgelöst wird (CODE_PROVIDER),
     sonst der Agent-Provider (AGENT_PROVIDER). Der Singleton wird pro kind
     gehalten, damit °_Agent und ^_Code getrennte Provider-Modi haben können.
+    Innerhalb von cloud_job() liefert der Agent-Kopf den Cloud-Hop, nicht Bonsai.
     """
+    override = _job_cloud.get()
+    if override is not None and str(kind or "agent").lower() != "code":
+        return override
     return factory.get_provider(kind)
 
 
@@ -64,6 +84,13 @@ def thinker_step_detail(kind="agent", model=None):
     else:
         configured = getattr(config, "AGENT_OPENROUTER_MODEL", "deepseek-v4-flash-vision-exp")
         prefix = "Cloud-Denker"
+    # Der lokale Kopf heisst auch so: sonst steht "Cloud-Denker" ueber einer
+    # Antwort, die den Rechner nie verlassen hat (Ternary Bonsai 2 27B).
+    try:
+        if getattr(get_provider(kind), "provider_name", "") == "local":
+            prefix = "Lokal-Denker"
+    except Exception:
+        pass
     used = model
     if not used:
         try:
@@ -79,9 +106,9 @@ def thinker_step_detail(kind="agent", model=None):
 
 def chat(system, user, temperature=0.3, num_ctx=8192, kind="agent"):
     """Chat-Aufruf an den aktiven Provider. Liefert Antworttext (str)."""
-    return factory.get_provider(kind).chat(system, user, temperature, num_ctx)
+    return get_provider(kind).chat(system, user, temperature, num_ctx)
 
 
 def generate(prompt, temperature=0.3, num_ctx=8192, kind="agent"):
     """Freier Generierungs-Aufruf an den aktiven Provider. Liefert str."""
-    return factory.get_provider(kind).generate(prompt, temperature, num_ctx)
+    return get_provider(kind).generate(prompt, temperature, num_ctx)

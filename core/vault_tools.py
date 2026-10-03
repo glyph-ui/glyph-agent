@@ -185,6 +185,15 @@ def _root_for_path(abs_path):
     return None
 
 
+def _fertig_report_frozen(rel: str) -> bool:
+    """True: bestehender Fertig-Bericht (nicht Verarbeitungslog/README)."""
+    r = str(rel or "").replace("\\", "/")
+    if "/00 Arbeitsfluss/Fertig/" not in f"/{r}":
+        return False
+    base = os.path.basename(r).lower()
+    return base not in ("verarbeitungslog.md", "readme.md")
+
+
 def _rel_to_root(resolved):
     """Relativer Pfad eines absoluten Vault-Pfads zu seinem Vault-Root (mit Vault-Präfix)."""
     if _is_pending_contract_ref(resolved):
@@ -1119,6 +1128,77 @@ def list_vault_dir(path="", limit=200, extensions=None):
     }
 
 
+def file_hash(path=""):
+    """SHA-256 einer Vault-Datei — Nur-Lesen, Ersatz für `shasum -a 256`.
+
+    Warum es das als Werkzeug gibt: der HSEQ-Tageslauf gleicht Rohnotizen über
+    ihre Prüfsumme gegen das Verarbeitungslog ab, weil Änderungsdaten von
+    Sync-Diensten verfälscht werden. Die Anweisung nennt dafür `shasum -a 256` —
+    ein Shell-Befehl, den der Agent-Modus nicht ausführen kann (er hat kein
+    Shell-Werkzeug). Ohne Prüfsumme bleibt der Lauf beim Prüfen stehen und
+    schreibt keine Berichte.
+
+    Liefert {status, path, vault, sha256, size, mtime, error}.
+    """
+    import hashlib
+
+    raw = (path or "").strip()
+    resolved = _resolve_vault_path(raw)
+    if not resolved:
+        log.log("file_hash_denied", path=raw, reason="outside_or_invalid")
+        return {
+            "status": "error",
+            "path": raw,
+            "vault": None,
+            "sha256": None,
+            "size": None,
+            "mtime": None,
+            "error": "Pfad liegt außerhalb der erlaubten Vaults oder existiert nicht.",
+        }
+    if not os.path.isfile(resolved):
+        log.log("file_hash_denied", path=raw, reason="not_a_file")
+        return {
+            "status": "error",
+            "path": raw,
+            "vault": None,
+            "sha256": None,
+            "size": None,
+            "mtime": None,
+            "error": "Kein reguläre Datei (Ordner?).",
+        }
+
+    h = hashlib.sha256()
+    try:
+        with open(resolved, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+        st = os.stat(resolved)
+    except OSError as e:
+        log.log("file_hash_fail", path=raw, error=str(e)[:120])
+        return {
+            "status": "error",
+            "path": raw,
+            "vault": None,
+            "sha256": None,
+            "size": None,
+            "mtime": None,
+            "error": f"Datei nicht lesbar: {e}",
+        }
+
+    digest = h.hexdigest()
+    rel = _rel_to_root(resolved)
+    log.log("file_hash", path=rel, sha12=digest[:12], size=st.st_size)
+    return {
+        "status": "success",
+        "path": rel,
+        "vault": (rel.lstrip("/").split("/", 1)[0] if "/" in rel.lstrip("/") else None),
+        "sha256": digest,
+        "size": st.st_size,
+        "mtime": int(st.st_mtime),
+        "error": None,
+    }
+
+
 def read_note(path):
     """Liest eine Notiz (relativ zum Vault) und gibt {path, content, chars} zurück."""
     resolved = _resolve_vault_path(path)
@@ -1202,7 +1282,18 @@ def apply_edit(path, new_content):
     """
     if not str(new_content or "").strip():
         raise ValueError("Notiz leeren verboten — Wachstum, kein Löschen")
-    current = read_note(path)
+    try:
+        current = read_note(path)
+    except FileNotFoundError:
+        # Neue Datei: ApplyEdit legt sie an, statt abzubrechen.
+        #
+        # Warum: das Modell waehlt zum Schreiben eines neuen Berichts regelmaessig
+        # ApplyEdit statt CreateNote. Der FileNotFoundError liess den Aufruf
+        # scheitern — und weil die Schleife bei EINEM Tool-Fehler abbricht
+        # (tool_loop: "Bei Tool-Fehler abbrechen"), starb damit der ganze Job,
+        # ohne dass je eine Datei entstand. Datei anlegen ist hier ungefaehrlich:
+        # es gibt nichts zu ueberschreiben, also auch kein Backup.
+        current = None
     resolved = _resolve_vault_path(path)
     if resolved is None:
         raise ValueError(f"Unsicherer Pfad: {path}")
@@ -1233,16 +1324,31 @@ def apply_edit(path, new_content):
     except Exception:
         pass
 
-    old_content = current["content"]
-    if old_content == new_content:
-        log.log("apply_edit_skipped", path=current["path"], reason="no_change")
-        return {"path": current["path"], "applied": False, "reason": "no_change"}
+    rel = current["path"] if current is not None else _rel_to_root(resolved)
+    old_content = current["content"] if current is not None else ""
+    if current is not None and _fertig_report_frozen(rel):
+        # Job-Schreibschritt: ApplyEdit auf einen bestehenden Fertig-Bericht
+        # hat das SoT-Beispiel (Musterkunde Musterstadt) überschrieben. Anlegen bleibt
+        # erlaubt (current is None); Log darf weiter ApplyEdit.
+        log.log("apply_edit_skipped", path=rel, reason="exists")
+        return {
+            "path": rel,
+            "applied": False,
+            "created": False,
+            "reason": "exists",
+            "hint": "Fertig-Bericht existiert — CreateNote mit neuem Namen oder nur Log fortschreiben.",
+        }
+    if current is not None and old_content == new_content:
+        log.log("apply_edit_skipped", path=rel, reason="no_change")
+        return {"path": rel, "applied": False, "reason": "no_change"}
 
     # Revisionsnummer bestimmen (Sidecar-Index nötig)
-    rev = _next_revision(current["path"])
-    backup_file = os.path.join(config.BACKUP_DIR, _backup_filename(current["path"], rev))
-    with open(backup_file, "w", encoding="utf-8") as f:
-        f.write(old_content)
+    rev = _next_revision(rel)
+    backup_file = ""
+    if current is not None:
+        backup_file = os.path.join(config.BACKUP_DIR, _backup_filename(rel, rev))
+        with open(backup_file, "w", encoding="utf-8") as f:
+            f.write(old_content)
 
     # Atomar schreiben: zuerst Temp, dann rename (kein halber Zustand)
     tmp = resolved + ".tmp"
@@ -1250,11 +1356,11 @@ def apply_edit(path, new_content):
         f.write(new_content)
     os.replace(tmp, resolved)
 
-    log.log("apply_edit", path=current["path"], rev=rev,
-            backup=_rel_to_root(backup_file),
+    log.log("apply_edit", path=rel, rev=rev, created=current is None,
+            backup=_rel_to_root(backup_file) if backup_file else "",
             old_chars=len(old_content), new_chars=len(new_content))
-    return {"path": current["path"], "applied": True, "rev": rev,
-            "backup": _rel_to_root(backup_file)}
+    return {"path": rel, "applied": True, "rev": rev, "created": current is None,
+            "backup": _rel_to_root(backup_file) if backup_file else ""}
 
 
 def _next_revision(relpath):

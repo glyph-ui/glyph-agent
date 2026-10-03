@@ -15,7 +15,7 @@ Sicherheitsprinzipien:
 import json
 import re
 
-from . import vault_tools, web, retrieval
+from . import log, vault_tools, web, retrieval
 
 # DeepSeek V4 DSML — kanonisch U+FF5C, oft als ASCII || oder | durchgereicht.
 _DSML_INNER = "\uff5cDSML\uff5c"
@@ -55,6 +55,31 @@ TOOLS = [
         "write": False,
     },
     {
+        "name": "RecallAsOf",
+        "description": (
+            "Zeitpunkt-Recall: semantische Vault-Suche im Index-Stand eines Datums "
+            "('was wussten wir am 2025-11-01?'). Rein lokal, read-only."
+        ),
+        "args": {
+            "query": "str",
+            "as_of": "str, Datum (YYYY-MM-DD oder ISO-8601)",
+            "top_k": "int (optional, Default 8)",
+        },
+        "write": False,
+    },
+    {
+        "name": "RecallChangedSince",
+        "description": (
+            "Differenz-Recall: was hat sich seit einem Datum geaendert "
+            "(neu / geaendert / entfernt), pro Pfad. Rein lokal, read-only."
+        ),
+        "args": {
+            "since": "str, Datum (YYYY-MM-DD oder ISO-8601)",
+            "limit": "int (optional, Default 50)",
+        },
+        "write": False,
+    },
+    {
         # OpenClaw-Wiki-Alias → VaultFind
         "name": "WikiSearch",
         "description": "Alias für VaultFind (OpenClaw-Wiki-Kompatibilität). Bevorzuge VaultFind.",
@@ -77,6 +102,17 @@ TOOLS = [
             "limit": "int (optional, Default 200)",
             "extensions": "list[str] (optional, z.B. ['.md','.pdf'])",
         },
+        "write": False,
+    },
+    {
+        "name": "FileHash",
+        "description": (
+            "SHA-256-Prüfsumme einer Vault-Datei (nur Lesen). Ersatz für "
+            "`shasum -a 256`, das im Agent-Modus nicht verfügbar ist. "
+            "Für Abgleiche, die Änderungsdaten misstrauen (Sync verfälscht sie) "
+            "— z.B. Rohnotiz gegen Verarbeitungslog prüfen."
+        ),
+        "args": {"path": "str, z.B. 00 Arbeitsfluss/Eingang/notiz.md"},
         "write": False,
     },
     {
@@ -374,6 +410,21 @@ CODE_TOOLS = [
         "args": {"path": "str, relativer Notizpfad im Vault", "content": "str, kompletter neuer Inhalt"},
         "write": True,
     },
+    {
+        "name": "TaskFinish",
+        "description": (
+            "Schließt eine Glyph-Aufgabe: schreibt das Artefakt nach "
+            "~/.glyph/tasks/<id>.md und setzt status=done. "
+            "id steht in der Meldung (Zeile Id:). Chat-Text allein reicht nicht. "
+            "Kein Workspace-Write, keine Freigabe."
+        ),
+        "args": {
+            "id": "str, Aufgaben-Id",
+            "content": "str, Markdown-Artefakt (Befund/Ergebnis)",
+            "summary": "str optional, eine Zeile für den Plan",
+        },
+        "write": True,
+    },
 ]
 
 TOOL_MAP = {t["name"]: t for t in TOOLS}
@@ -593,6 +644,44 @@ def try_parse_tool_call(text):
     return None
 
 
+def _name_words(name):
+    """Wortbestandteile eines Tool-Namens: klein, ohne Trenner, sortiert.
+
+    `ListVaultDir` und `vault_list_dir` ergeben dieselbe Menge
+    ['dir', 'list', 'vault'] — genau darum geht es: Modelle nennen Werkzeuge
+    gern in snake_case oder mit anderer Wortstellung.
+    """
+    s = re.sub(r"[^A-Za-z0-9]+", " ", str(name or ""))
+    s = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", s)
+    return sorted(w.lower() for w in s.split() if w)
+
+
+def _resolve_tool_name(tmap, tool_name):
+    """Findet ein registriertes Tool auch bei abweichender Schreibweise.
+
+    Modelle rufen regelmäßig Namen auf, die es nicht gibt: `vault_list_dir`
+    statt `ListVaultDir`, `websearch` statt `WebSearch`. Bisher brach die Runde
+    dann mit „Unbekanntes Tool" ab und der Job endete als Fehler, obwohl das
+    gemeinte Werkzeug existiert.
+
+    Aufgelöst wird nur, wenn GENAU EIN Tool passt — bei Mehrdeutigkeit bleibt es
+    beim Fehler, damit nicht geraten wird.
+    """
+    raw = str(tool_name or "").strip()
+    if not raw or raw in tmap:
+        return None, ""
+    low = raw.lower()
+    for name in tmap:
+        if name.lower() == low:
+            return name, "case"
+    want = _name_words(raw)
+    if want:
+        hits = [n for n in tmap if _name_words(n) == want]
+        if len(hits) == 1:
+            return hits[0], "words"
+    return None, ""
+
+
 def execute(tool_name, args, confirm=None, mode="agent", allow_elevated=False):
     """
     Führt ein Tool kontrolliert aus.
@@ -610,6 +699,12 @@ def execute(tool_name, args, confirm=None, mode="agent", allow_elevated=False):
     mode = (mode or "agent").lower()
     tmap = tool_map(mode)
     tool = tmap.get(tool_name)
+    if tool is None:
+        resolved, how = _resolve_tool_name(tmap, tool_name)
+        if resolved:
+            log.log("tool_name_resolved", asked=str(tool_name), used=resolved, how=how)
+            tool_name = resolved
+            tool = tmap[resolved]
     if tool is None:
         return {"ok": False, "result": None,
                 "error": f"Unbekanntes Tool '{tool_name}'. Erlaubt: {', '.join(tmap)}"}
@@ -666,6 +761,11 @@ def _execute_agent(tool_name, args):
             extensions=ext,
         )
         return {"ok": True, "result": res}
+    if tool_name == "FileHash":
+        res = vault_tools.file_hash(args.get("path") or "")
+        # Fehlgeschlagene Prüfsumme ist ein Werkzeugfehler, kein stiller Treffer.
+        return {"ok": res.get("status") == "success", "result": res,
+                "error": res.get("error")}
     if tool_name in ("ReadNote", "WikiGet"):
         res = vault_tools.read_note(args.get("path"))
         return {"ok": True, "result": res}
@@ -814,4 +914,23 @@ def _execute_code(tool_name, args, allow_elevated=False):
         return {"ok": True, "result": code_tools.read_memory(args.get("scope"))}
     if tool_name == "VaultWrite":
         return {"ok": True, "result": code_tools.vault_write(args.get("path", ""), args.get("content", ""))}
+    if tool_name == "RecallAsOf":
+        return {"ok": True, "result": code_tools.recall_as_of(
+            args.get("query", ""), args.get("as_of") or args.get("date"), args.get("top_k"))}
+    if tool_name == "RecallChangedSince":
+        return {"ok": True, "result": code_tools.recall_changed_since(
+            args.get("since") or args.get("date"), args.get("limit"))}
+    if tool_name == "TaskFinish":
+        inner = code_tools.task_finish(
+            args.get("id") or args.get("task_id") or "",
+            args.get("content") or "",
+            summary=args.get("summary") or "",
+        )
+        if not inner.get("ok"):
+            return {
+                "ok": False,
+                "result": inner,
+                "error": inner.get("error") or "TaskFinish fehlgeschlagen",
+            }
+        return {"ok": True, "result": inner}
     return {"ok": False, "result": None, "error": f"Tool '{tool_name}' nicht implementiert."}

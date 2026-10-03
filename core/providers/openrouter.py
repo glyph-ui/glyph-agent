@@ -154,6 +154,14 @@ def _resolve_chat_timeout(timeout=None):
             return max(1, int(timeout))
         except (TypeError, ValueError):
             pass
+    # Lokaler Kopf: eigener, laengerer Timeout (siehe config.LOCAL_CHAT_TIMEOUT)
+    try:
+        from . import factory as _factory
+
+        if getattr(_factory.get_provider("agent"), "provider_name", "") == "local":
+            return max(1, int(getattr(_cfg, "LOCAL_CHAT_TIMEOUT", 600) or 600))
+    except Exception:
+        pass
     mode = getattr(_cfg, "MODE", "agent") or "agent"
     if str(mode).lower() == "code":
         raw = getattr(_cfg, "CODE_CHAT_TIMEOUT", None)
@@ -228,7 +236,12 @@ def user_content_with_images(text, images=None):
 
 class OpenRouterProvider(ModelProvider):
     def __init__(self, url=None, model=None, api_key=None, fallback_model=None):
-        self.url = url or os.environ.get("OPENROUTER_URL", "https://openrouter.ai/api/v1")
+        self.url = (
+            url
+            or getattr(_cfg, "OPENROUTER_URL", None)
+            or os.environ.get("OPENROUTER_URL")
+            or "https://openrouter.ai/api/v1"
+        )
         self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY", "")
         if getattr(_cfg, "MODE", "agent") == "agent":
             default_model = getattr(_cfg, "AGENT_OPENROUTER_MODEL", None) or os.environ.get(

@@ -15,7 +15,7 @@ Lokale Engine hinter dem Glyph-Profil **glyph-agent**: Vault-Gedächtnis, Recher
 | **HTTP** | `/chat`, `/health`, `/vault/find`, vaults/workspaces/recurring/tasks CRUD | `server.py` | alle Loops |
 | **Agent-Loop** | B+: VaultFind → Tools → Cloud-Denker. UI: `vault_search=false` = memory-wiki + offenes Web; Auswahl = Arbeits-Vault + Wiki | `core/tool_loop.py`, `core/agent.py`, `core/vault_preview.py`, `core/vault_scope.py` | retrieval, research, vault_tools |
 | **Vault-Schreiben** | Chat-Wachstum: CreateNote/ApplyEdit unter Themen/ + Wiki. Chat nie löschen/leeren. Job `td-wiki-hygiene` darf doppelt tote Wiki-Dateien in den 30-Tage-Korb. | `core/vault_write_policy.py`, `core/vault_tools.py`, `scripts/wiki_hygiene.py` | tool_loop, jobs |
-| **Code-Loop** | ^_Code: Read/Write/Grep/Shell; Freigabe Einmal/Auftrag/Task | `core/code_loop.py`, `core/code_tools.py` | `workspaces_registry`, Grant-Store |
+| **Code-Loop** | ^_Code: Read/Write/Grep/Shell; Freigabe Einmal/Auftrag/Task; **TaskFinish** schließt Glyph-Aufgabe (Artefakt + `done`, kein Workspace-Grant) | `core/code_loop.py`, `core/code_tools.py`, `core/tasks.py` | `workspaces_registry`, Grant-Store, `~/.glyph/tasks.json` |
 | **Tools-Registry** | Tool-Namen, Schemas, Dispatch | `core/tool_registry.py` | tool_loop / code_loop |
 | **Bind-Store** | Persistenz + Kern-PATCH für Vaults+Workspaces; `heads` je Kopf (grok/agent/code) | `core/bind_store.py` | vaults_registry, workspaces_registry |
 | **Vaults** | `~/.glyph/vaults.json`, Pins, Privat-Block | `core/vaults_registry.py` | Index, VaultFind |
@@ -149,8 +149,8 @@ _Avoid_: git commit in der Whitelist als stilles Allow
 - SoT: `~/.glyph/tasks.json` via `core/tasks.py` + HTTP `/tasks`.
 - Zielkopf optional. Default leer. Köpfe: `grok` · `_code` · `glyph-agent` · `codex`. **Kein** Kopf `analysis`.
 - Belege: Prompt, Antwort, kompakter Trace, Anhang-Metadaten (Pfad/Name) — keine Blobs, keine ganze Session, kein Session-Zeiger (°_Agent speichert keine Sessions).
-- Anlegen braucht `pass` **und** Meldung+Antwort. PATCH `done` nur mit `artifact`. Plan **Erledigt** löscht den Eintrag (`DELETE /tasks/<id>`), kein Pfad. Chat-Belege sind Kontext, kein Abschluss. Alte Items ohne Paar laden weiter.
-- Prompt fordert: keine Build-Änderung ohne Nutzerauftrag; Rückfragen als Status `needs_input`.
+- Anlegen braucht `pass` **und** Meldung+Antwort. PATCH `done` nur mit `artifact`. Plan **Erledigt** löscht den Eintrag (`DELETE /tasks/<id>`), kein Pfad. Chat-Belege sind Kontext, kein Abschluss. Alte Items ohne Paar laden weiter. ^_Code schließt über Tool **TaskFinish** (nicht WriteFile in den Workspace).
+- Prompt fordert: keine Build-Änderung ohne Nutzerauftrag; Rückfragen als Status `needs_input`. Vor-Antwort nicht neu explorieren. Fertig = TaskFinish.
 - Sichtbar im Glyph-Kalender Tab Plan; Übernehmen legt den Prompt in den Composer. Kein automatischer Kopfwechsel.
 
 ## Settled decisions (Second-Brain Gaps 2026-08-09)
@@ -201,8 +201,9 @@ _Avoid_: git commit in der Whitelist als stilles Allow
 - **Denker:** Flash bleibt; kein Provider-Wechsel ohne neuen Beleg.
 - **Runden:** `CODE_MAX_ROUNDS=32`. Timeout 180s.
 - **SearchReplace 0×/N×:** zurück in die Loop. Hart tot nur Deny / 🔒 / Nutzer-Ablehnung / Shell-Timeout / Test-Fail.
-- **Grep/ListDir 3× gleich:** nicht ausführen — „Map nutzen oder antworten“.
+- **Grep/ListDir/ReadFile 3× gleich:** nicht ausführen — „Map nutzen oder antworten“. ReadFile-Key **ohne** offset/limit (sonst Datei-Walk bis Schleifenschutz).
 - **Nach Write/Replace:** fokussierte Tests im Grant (`test`); Ergebnis sichtbar; Fail → kein Commit. `npm run service:*` bleibt einzeln (Deploy/Elevated).
+- **Glyph-Aufgabe (2026-09-08):** Handoff trägt `Id:`. Vor-Antwort = Beleg, nicht neu walken. Fertig = Tool **TaskFinish** (schreibt `~/.glyph/tasks/<id>.md`, PATCH `done`) — ohne Freigabe, ohne Workspace-Root. Chat allein schließt nicht.
 
 ## Settled decisions (^_Code Workspaces Phase 2 — 2026-08-11)
 

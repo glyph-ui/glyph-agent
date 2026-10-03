@@ -103,6 +103,13 @@ class TaskStoreTests(unittest.TestCase):
         self.assertEqual(done["status"], "done")
         self.assertEqual(done["artifact"], "client/src/App.jsx")
 
+    def test_delete_removes_item(self):
+        item = tasks.create_item({"title": "Bug", "pass": "Weg aus dem Plan", "evidence": PAIR})
+        self.assertTrue(tasks.delete_item(item["id"]))
+        self.assertIsNone(tasks.get_item(item["id"]))
+        self.assertEqual(tasks.list_items(), [])
+        self.assertFalse(tasks.delete_item(item["id"]))
+
     def test_old_items_without_pass_still_load(self):
         data = {
             "version": 1,
@@ -113,6 +120,64 @@ class TaskStoreTests(unittest.TestCase):
         loaded = tasks.get_item("old1")
         self.assertEqual(loaded["title"], "Alt")
         self.assertEqual(loaded["pass"], "")
+
+    def test_handoff_includes_id_and_finish_tool(self):
+        item = tasks.create_item({
+            "title": "Composer sendet nicht",
+            "pass": "Ursache steht",
+            "evidence": PAIR,
+        })
+        prompt = tasks.handoff_prompt(item["id"])
+        self.assertIn(f"Id: {item['id']}", prompt)
+        self.assertIn("TaskFinish", prompt)
+        self.assertIn("nicht neu", prompt.lower())
+
+    def test_finish_item_writes_artifact_and_marks_done(self):
+        item = tasks.create_item({
+            "title": "Loop-Walk",
+            "pass": "Ursache in Datei",
+            "evidence": PAIR,
+        })
+        done = tasks.finish_item(
+            item["id"],
+            content="# Befund\nReadFile-Walk war die Bremse.",
+            summary="Walk gestoppt, Artefakt da.",
+            by="_code",
+        )
+        self.assertEqual(done["status"], "done")
+        self.assertTrue(done["artifact"].endswith(f"{item['id']}.md"))
+        self.assertIn("Walk gestoppt", done["summary"])
+        path = os.path.join(tasks.artifact_dir(), f"{item['id']}.md")
+        self.assertTrue(os.path.isfile(path))
+        with open(path, encoding="utf-8") as f:
+            body = f.read()
+        self.assertIn("ReadFile-Walk war die Bremse", body)
+
+    def test_finish_item_requires_content(self):
+        item = tasks.create_item({
+            "title": "Leer",
+            "pass": "Inhalt steht",
+            "evidence": PAIR,
+        })
+        with self.assertRaisesRegex(ValueError, "Artefakt"):
+            tasks.finish_item(item["id"], content="   ")
+
+    def test_code_tool_taskfinish_via_registry(self):
+        from core import tool_registry
+        item = tasks.create_item({
+            "title": "Via Tool",
+            "pass": "Artefakt da",
+            "evidence": PAIR,
+        })
+        out = tool_registry.execute(
+            "TaskFinish",
+            {"id": item["id"], "content": "# ok\nUrsache steht.", "summary": "Ursache steht."},
+            confirm=lambda *_: True,
+            mode="code",
+        )
+        self.assertTrue(out.get("ok"), out)
+        self.assertEqual(out["result"]["status"], "done")
+        self.assertEqual(tasks.get_item(item["id"])["status"], "done")
 
     def test_old_items_without_pair_still_load(self):
         data = {

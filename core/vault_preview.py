@@ -13,6 +13,11 @@ PREVIEW_BUDGET_S = 70
 # Disk-Namen zuerst zeigen. Index darf nachziehen, aber nicht die Liste blockieren.
 INDEX_WAIT_WITH_HITS_S = 4.0
 INDEX_WAIT_EMPTY_S = 20.0
+# Index-Treffer (Notizen UND PDF-Chunks) dürfen den Web-Fallback verhindern,
+# wenn sie deutlich stark sind. Gemessen (09.09.): echte Inhaltsfragen erreichen
+# Hybrid 0.75–1.02 / Vektor 0.57–0.75, Nonsens 0.52–0.67 / 0.40–0.61.
+INDEX_STRONG_HYBRID = float(os.environ.get("VAULT_INDEX_STRONG_HYBRID", "0.70"))
+INDEX_STRONG_VECTOR = float(os.environ.get("VAULT_INDEX_STRONG_VECTOR", "0.55"))
 
 def preview_vault_hits(query, top_k=8, budget_s=None, now=None):
     """Namens-Treffer auf Disk + VaultFind-Eltern (+ ListVaultDir bei Inventar).
@@ -197,7 +202,14 @@ def preview_vault_hits(query, top_k=8, budget_s=None, now=None):
     )
     named_file_ids = {h.get("id") for h in named_files}
     other_files = [h for h in files if h.get("id") not in named_file_ids]
-    hits = named_files + top_folders + other_folders + named_first[4:] + other_files
+    # Inhalts-Treffer (Index/PDF-Chunks) sichtbar halten: 3 Plätze reservieren.
+    # Ohne das füllen namensgleiche Dateien (Score 70–100) die 12er-Liste und der
+    # inhaltlich beste Treffer fällt heraus (gemessen 09.09.: Scheel-PDF fehlte).
+    _content = [h for h in other_files if h.get("kind") == "file"][:3]
+    _content_ids = {id(h) for h in _content}
+    _rest_files = [h for h in other_files if id(h) not in _content_ids]
+    hits = (named_files[:4] + top_folders + _content + named_files[4:]
+            + named_first[4:] + _rest_files)
     hits = hits[:_MAX_HITS]
     # Starke Treffer = Namens-Treffer (>=70) oder Embedding >= _EMBED_FLOOR.
     # Schwache Nur-Embedding-Treffer (~0.35-0.5, auch bei Nonsens-Queries)
@@ -207,6 +219,14 @@ def preview_vault_hits(query, top_k=8, budget_s=None, now=None):
     # absolute Schwelle zu rechtfertigen — ohne Namens-Treffer gilt der
     # Vault als leer und der Web-Fallback darf ran.
     strong = bool(named_files or named_first)
+    if not strong:
+        # Kein Namens-Treffer, aber starke Index-Treffer (Notizen/PDF-Chunks) →
+        # Vault ist NICHT leer, Web-Fallback wäre falsch.
+        _idx = [r for r in (found.get("results") or []) if isinstance(r, dict)]
+        _best_hybrid = max((_score_val(r.get("score")) for r in _idx), default=-1.0)
+        _best_vec = max((_score_val(r.get("vector_score")) for r in _idx), default=-1.0)
+        if _best_hybrid >= INDEX_STRONG_HYBRID and _best_vec >= INDEX_STRONG_VECTOR:
+            strong = True
     fallback = None
     tried = []
     if not strong:
@@ -232,8 +252,16 @@ def preview_vault_hits(query, top_k=8, budget_s=None, now=None):
 
 
 def _snip_excerpt(path):
-    """Kurzer Notiz-Text für die Trefferliste, ohne LLM."""
-    if not str(path or "").lower().endswith(".md"):
+    """Kurzer Notiz-Text für die Trefferliste, ohne LLM. PDFs aus dem Vektorindex."""
+    p = str(path or "").lower()
+    if p.endswith(".pdf"):
+        try:
+            from . import pdf_index
+
+            return pdf_index.excerpt_for(path)
+        except Exception:
+            return ""
+    if not p.endswith(".md"):
         return ""
     try:
         abs_p = vault_tools._resolve_vault_path(path)

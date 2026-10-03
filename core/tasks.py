@@ -19,6 +19,12 @@ TZ = ZoneInfo("Europe/Berlin")
 STORE_PATH = os.path.expanduser("~/.glyph/tasks.json")
 STATUSES = {"new", "analysis", "needs_input", "ready_to_build", "building", "review", "done", "blocked"}
 HEADS = {"grok", "_code", "glyph-agent", "codex"}
+_ARTIFACT_MAX = 80_000
+
+
+def artifact_dir() -> str:
+    """Markdown-Artefakte neben der SoT-Datei (Tests: neben temp STORE_PATH)."""
+    return os.path.join(os.path.dirname(os.path.abspath(STORE_PATH)), "tasks")
 
 
 def _now() -> str:
@@ -209,6 +215,61 @@ def update_item(item_id: str, payload: dict) -> dict:
     raise ValueError("Aufgabe nicht gefunden")
 
 
+def delete_item(item_id: str) -> bool:
+    """Entfernt die Aufgabe aus dem Plan. False wenn unbekannt."""
+    wanted = str(item_id or "")
+    if not wanted:
+        return False
+    data = _load()
+    items = data.get("items") or []
+    kept = [raw for raw in items if str(raw.get("id") or "") != wanted]
+    if len(kept) == len(items):
+        return False
+    data["items"] = kept
+    _save(data)
+    return True
+
+
+def finish_item(item_id: str, content: str, summary: str = "", by: str = "_code") -> dict:
+    """Schreibt das Artefakt und setzt status=done. Für ^_Code TaskFinish."""
+    item = get_item(item_id)
+    if not item:
+        raise ValueError("Aufgabe nicht gefunden")
+    body = str(content or "").replace("\x00", "").strip()
+    if not body:
+        raise ValueError("Fertig braucht ein Artefakt — Inhalt fehlt")
+    if len(body) > _ARTIFACT_MAX:
+        body = body[: _ARTIFACT_MAX - 20] + "\n…[gekürzt]"
+    dest_dir = artifact_dir()
+    os.makedirs(dest_dir, exist_ok=True)
+    fname = f"{item['id']}.md"
+    dest = os.path.join(dest_dir, fname)
+    fd, tmp = tempfile.mkstemp(prefix="task-art-", suffix=".md", dir=dest_dir)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(body)
+            if not body.endswith("\n"):
+                f.write("\n")
+        os.replace(tmp, dest)
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+    home_tasks = os.path.join(os.path.expanduser("~/.glyph"), "tasks")
+    try:
+        live = os.path.realpath(dest_dir) == os.path.realpath(home_tasks)
+    except OSError:
+        live = False
+    artifact = f"~/.glyph/tasks/{fname}" if live else dest
+    return update_item(item_id, {
+        "status": "done",
+        "artifact": artifact,
+        "summary": summary or body.split("\n", 1)[0][:200],
+        "by": by or "_code",
+    })
+
+
 def handoff_prompt(item_id: str) -> str:
     item = get_item(item_id)
     if not item:
@@ -222,6 +283,7 @@ def handoff_prompt(item_id: str) -> str:
             attachment_lines.append(f"- {name}" + (f" ({path})" if path and path != name else ""))
     return "\n".join(x for x in [
         f"# Glyph-Aufgabe: {item['title']}",
+        f"Id: {item['id']}",
         f"Status: {item['status']} · Übergeben von: {item['source']}",
         f"Zielkopf: {item['target'] or 'noch nicht zugewiesen'}",
         f"Workspace: {item['workspace']}" if item.get("workspace") else "",
@@ -231,5 +293,8 @@ def handoff_prompt(item_id: str) -> str:
         "\n## Ursprüngliche Meldung\n" + ev["prompt"] if ev["prompt"] else "",
         "\n## Bisheriges Ergebnis\n" + ev["answer"] if ev["answer"] else "",
         "\n## Übergebene Anhänge\n" + "\n".join(attachment_lines) if attachment_lines else "",
-        "\nArbeite nur auf Basis dieser Aufgabe. Stelle Rückfragen als Status `needs_input`; führe keine Build-Änderung aus, bevor der Nutzer den Build beauftragt. Fertig nur mit Artefakt — Chat-Belege sind Kontext, kein Ergebnis.",
+        "\nArbeite nur auf Basis dieser Aufgabe. Vor-Antwort ist Beleg — nicht neu den Tree walken. "
+        "CONTEXT-Map zuerst, nur Lücken lesen. Rückfragen als Status `needs_input`. "
+        "Keine Build-Änderung ohne Nutzerauftrag. "
+        "Fertig = Tool TaskFinish (id, content, summary) — Chat allein schließt nicht.",
     ] if x)

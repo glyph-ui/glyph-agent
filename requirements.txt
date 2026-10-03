@@ -1,0 +1,15 @@
+# Python-Abhaengigkeiten von glyph-agent (Python 3.11).
+#
+# Installation:
+#     /opt/homebrew/bin/python3.11 -m pip install -r requirements.txt
+#
+# numpy wird von core/pdf_index.py gebraucht (Vektorsuche ueber PDF-Chunks:
+# `import numpy as np` in search() und _load_cache()). Der Import steht IN der
+# Funktion, nicht am Modulkopf — fehlt das Paket, startet die Engine trotzdem
+# fehlerfrei und die PDF-Suche liefert einfach keine Treffer.
+#
+# Folge ohne dieses Paket: PDFs sind fuer die semantische Vault-Suche
+# unsichtbar. Nur die Volltextsuche findet sie noch — und die sortiert nach
+# Trefferhaeufigkeit, weshalb ein Inhaltsverzeichnis (MOC), das den Begriff oft
+# nennt, die eigentliche Fachdatei ueberstimmt. Getestet mit numpy 2.4.6.
+numpy

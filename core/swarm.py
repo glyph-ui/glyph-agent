@@ -341,6 +341,8 @@ def run_swarm(
     syn_sys = (
         "Du bist glyph-agent. Knappen B+-Bericht schreiben. Kern zuerst. "
         "Jede faktische Aussage mit URL aus den Quellen. "
+        "Quellen NOTIEREN: URL direkt hinter der Aussage, höchstens eine je Aussage. "
+        "Ohne Klammern, ohne Semikolon, ohne Wort 'WEB' vor der URL. "
         "Keine erfundenen Quellen. Unsicherheit sagen. stop-slop. Deutsch."
     )
     answer = chat(syn_sys, f"Thema: {topic}\n\nQuellen:\n{sources_block}")

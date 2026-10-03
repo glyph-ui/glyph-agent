@@ -1293,6 +1293,55 @@ def vault_heads_enabled() -> bool:
     return False
 
 
+_NO_VAULT = (
+    "Kein Vault für ^_Code freigeschaltet — im Graph (Anbindung) Kopf ^_Code am "
+    "Vault auf Lesen/Schreiben stellen."
+)
+
+
+def recall_as_of(query, as_of, top_k=8):
+    """
+    Zeitpunkt-Recall: semantische Suche im Index-Stand eines Datums.
+    Rein lokal (bge-m3), read-only. Beantwortet "was wussten wir am ...?".
+    """
+    if not vault_heads_enabled():
+        return {"ok": False, "error": _NO_VAULT}
+    try:
+        from . import pdf_index, retrieval
+
+        q = str(query or "").strip()
+        if not q:
+            return {"ok": False, "error": "Query fehlt."}
+        if not as_of:
+            return {"ok": False, "error": "as_of fehlt (YYYY-MM-DD)."}
+        emb = retrieval.embed_text(q)
+        if not emb:
+            return {"ok": False, "error": "Embedding fehlgeschlagen (Ollama/bge-m3 erreichbar?)."}
+        k = max(1, int(top_k or 8))
+        hits = pdf_index.search_as_of(emb, as_of, candidate_k=k * 4)
+        return {"ok": True, "as_of": str(as_of), "query": q, "hits": hits[:k]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
+def recall_changed_since(since, limit=50):
+    """
+    Differenz-Recall: was ist seit einem Datum neu, geaendert oder entfernt.
+    Rein lokal, read-only. Beantwortet "was ist neu seit ...?".
+    """
+    if not vault_heads_enabled():
+        return {"ok": False, "error": _NO_VAULT}
+    try:
+        from . import pdf_index
+
+        if not since:
+            return {"ok": False, "error": "since fehlt (YYYY-MM-DD)."}
+        res = pdf_index.changes_since(since, limit=max(1, int(limit or 50)))
+        return {"ok": True, **res}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+
 def vault_find(query, top_k=8):
     """Vault-Suche (Hybrid) über die freigeschalteten Vaults. Read-only."""
     if not vault_heads_enabled():

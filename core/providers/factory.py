@@ -6,11 +6,12 @@ Der Rest des Codes (Agent, CLI) bezieht den Provider NUR über get_provider()
 und kennt nie die konkrete Klasse. Damit bleibt der Modellaustausch zentral
 (in core/config.py gesteuert).
 
-Chat-Provider: direct | openrouter | fallback.
-Kein lokaler Chat-Provider.
+Chat-Provider: direct | openrouter | fallback | local.
+"local" = lokaler OpenAI-Server (Ternary Bonsai 2 27B), bewusst ohne Cloud-Fallback.
 """
 from .. import config
 from .direct import DirectProvider
+from .local import LocalProvider
 from .mlx import MLXProvider
 from .openrouter import OpenRouterProvider
 from .fallback import FallbackProvider
@@ -109,6 +110,7 @@ def _make_openrouter(kind="agent"):
 
 _PROVIDERS = {
     "mlx": lambda: MLXProvider(),
+    "local": lambda kind="agent": LocalProvider(),
     "direct": _make_direct,
     "openrouter": lambda kind="agent": _make_openrouter(kind),
     "hybrid": lambda kind="agent": _resolve_hybrid_provider(kind),
@@ -132,10 +134,15 @@ def _resolve_provider_name(kind="agent"):
     return name
 
 
+def cloud_provider(kind="agent"):
+    """Hybrid-Hop für Jobs. Nie local, nie der Chat-Singleton."""
+    return _resolve_hybrid_provider(kind)
+
+
 def get_provider(kind="agent"):
     """
     Liefert den aktiven ModelProvider (Singleton pro kind).
-    Auswahl über config.PROVIDER / CODE_PROVIDER ('direct' | 'openrouter' | 'hybrid' | 'mlx').
+    Auswahl über config.PROVIDER / CODE_PROVIDER ('direct' | 'openrouter' | 'hybrid' | 'local' | 'mlx').
     Unbekannt → direct (B+-Default).
     """
     kind = str(kind or "agent").lower()

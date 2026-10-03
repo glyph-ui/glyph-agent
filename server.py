@@ -17,6 +17,7 @@ die Tool-Orchestrierung nutzen kann, ohne die Agentenlogik selbst zu tragen.
   POST   /recurring              Anlegen {title,prompt,schedule,allow_write,paused,pass?}
   PATCH  /recurring/<id>         Update
   DELETE /recurring/<id>         Löschen
+  DELETE /tasks/<id>             Aufgabe aus dem Plan entfernen
   POST   /recurring/<id>/run     {force?: true} einmal / fällig
   POST   /recurring/<id>/pause   {paused: true|false}
   POST   /recurring/run-due      Scheduler: alle fälligen
@@ -533,12 +534,15 @@ def _handle_models_probe(payload):
     body = payload or {}
     model = body.get("model") or body.get("primary") or ""
     kind = str(body.get("kind") or "agent").lower()
+    hop = body.get("hop") or body.get("provider") or None
     timeout = body.get("timeout")
     try:
         timeout_i = int(timeout) if timeout is not None else 45
     except (TypeError, ValueError):
         timeout_i = 45
-    result = runtime_models.probe_model(str(model), timeout=timeout_i, kind=kind)
+    result = runtime_models.probe_model(
+        str(model), timeout=timeout_i, kind=kind, hop=hop
+    )
     # Attach context_length hint from OpenRouter public catalog when possible
     try:
         import urllib.request
@@ -567,17 +571,129 @@ def main():
     # andere Requests (Kern-Fix gegen Server-Einfrieren bei OpenRouter-Hang).
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+    # Nur diese lokalen App-Origins duerfen den Engine direkt ansprechen.
+    _APP_ORIGINS = ("app://obsidian.md", "null")
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):  # leiser
             pass
+
+        def _cors_origin(self):
+            origin = str(self.headers.get("Origin") or "").strip()
+            return origin if origin in _APP_ORIGINS else ""
+
+        def do_OPTIONS(self):
+            origin = self._cors_origin()
+            self.send_response(204)
+            if origin:
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header(
+                    "Access-Control-Allow-Methods",
+                    "GET, POST, PATCH, DELETE, OPTIONS",
+                )
+                self.send_header("Access-Control-Allow-Headers", "Content-Type")
+                self.send_header("Access-Control-Max-Age", "600")
+                self.send_header("Vary", "Origin")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
 
         def _send(self, code, obj):
             body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
             self.send_response(code)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
+            origin = self._cors_origin()
+            if origin:
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
             self.end_headers()
             self.wfile.write(body)
+
+        def _handle_vault_file(self, qs):
+            """Rohdatei aus dem Vault (PDF/Text) für das Anzeigefenster der UI.
+
+            Gleiche Scope-Regeln wie ReadPdf: nur Vault-Pfade; BLOCKED_DIRS und
+            private Vaults werden nicht ausgeliefert.
+            """
+            import mimetypes
+            import urllib.parse as _up
+
+            params = _up.parse_qs(qs or "")
+            raw = (params.get("path") or [""])[0]
+            if not raw:
+                self._send(400, {"ok": False, "error": "path fehlt"})
+                return
+            try:
+                config.reload_vault_paths()
+            except Exception:
+                pass
+            try:
+                from core import vault_tools, vaults_registry
+
+                abs_p = vault_tools._resolve_vault_path(raw)
+                if not abs_p or not os.path.isfile(abs_p):
+                    self._send(404, {"ok": False, "error": "Datei nicht gefunden"})
+                    return
+                rel = vault_tools._rel_to_root(abs_p)
+                if vault_tools._is_blocked(rel):
+                    self._send(403, {"ok": False, "error": "Geschützter Ordner"})
+                    return
+                real = os.path.realpath(abs_p)
+                # Privat-Erkennung über den *nächstgelegenen* Vault-Root: der Home-Vault
+                # (/Users/<user>) ist Elternverzeichnis aller anderen Vaults — ein reiner
+                # Präfix-Vergleich würde damit alles blockieren.
+                roots = [
+                    os.path.realpath(v)
+                    for v in (getattr(config, "VAULT_PATHS", None) or [])
+                    if v
+                ]
+                owner = max(
+                    (r for r in roots if real == r or real.startswith(r + os.sep)),
+                    key=len,
+                    default=None,
+                )
+                priv = {os.path.realpath(p) for p in vaults_registry.private_paths()}
+                if owner in priv:
+                    self._send(403, {"ok": False, "error": "Privater Vault"})
+                    return
+            except Exception as e:  # noqa: BLE001
+                self._send(400, {"ok": False, "error": str(e)[:200]})
+                return
+            fmt = (params.get("format") or [""])[0].strip().lower()
+            if fmt in ("pages", "text"):
+                if not abs_p.lower().endswith(".pdf"):
+                    self._send(400, {"ok": False, "error": "kein PDF", "pages": []})
+                    return
+                from core import pdf_tools
+
+                pages, err = pdf_tools.pdf_pages_text(abs_p)
+                if err:
+                    self._send(200, {"ok": False, "error": err, "pages": pages or []})
+                    return
+                self._send(200, {"ok": True, "pages": pages, "path": rel})
+                return
+            ext = os.path.splitext(abs_p)[1].lower()
+            ctype = mimetypes.guess_type(abs_p)[0] or "application/octet-stream"
+            if ext in (".md", ".txt", ".json", ".csv"):
+                ctype = "text/plain; charset=utf-8"
+            try:
+                with open(abs_p, "rb") as fh:
+                    data = fh.read()
+            except OSError as e:
+                self._send(500, {"ok": False, "error": str(e)})
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header(
+                "Content-Disposition", f'inline; filename="{os.path.basename(abs_p)}"'
+            )
+            origin = self._cors_origin()
+            if origin:
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
+            self.end_headers()
+            self.wfile.write(data)
 
         def do_GET(self):
             full = self.path
@@ -589,6 +705,8 @@ def main():
                 except Exception:
                     pass
                 self._send(200, _handle_health())
+            elif path in ("/vault/file", "/vault/file/"):
+                self._handle_vault_file(qs)
             elif path in ("/vaults", "/vaults/"):
                 try:
                     config.reload_vault_paths()
@@ -773,6 +891,14 @@ def main():
                 item_id = path.rstrip("/").split("/")[-1]
                 try:
                     ok = agent_recurring.delete_item(item_id)
+                    self._send(200 if ok else 404, {"ok": ok, "id": item_id})
+                except Exception as e:
+                    self._send(500, {"ok": False, "error": str(e)})
+                return
+            if path.startswith("/tasks/") and path.count("/") == 2:
+                item_id = path.rstrip("/").split("/")[-1]
+                try:
+                    ok = agent_tasks.delete_item(item_id)
                     self._send(200 if ok else 404, {"ok": ok, "id": item_id})
                 except Exception as e:
                     self._send(500, {"ok": False, "error": str(e)})
@@ -1005,13 +1131,35 @@ def main():
                     self.send_header("Cache-Control", "no-cache")
                     self.end_headers()
                     def send(obj):
+                        from core.tool_loop import ClientCancelled
+                        import errno as _errno
                         try:
                             line = (json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8")
                             self.wfile.write(line)
                             self.wfile.flush()
+                        except BrokenPipeError as e:
+                            raise ClientCancelled(str(e)) from e
+                        except ConnectionResetError as e:
+                            raise ClientCancelled(str(e)) from e
+                        except OSError as e:
+                            # Client aborted (session/cancel → fetch abort).
+                            if e.errno in (
+                                getattr(_errno, "EPIPE", -1),
+                                getattr(_errno, "ECONNRESET", -1),
+                                getattr(_errno, "ECONNABORTED", -1),
+                            ):
+                                raise ClientCancelled(str(e)) from e
+                            pass
                         except Exception:
                             pass
-                    _handle_chat(payload, send=send)
+                    try:
+                        _handle_chat(payload, send=send)
+                    except Exception as e:
+                        from core.tool_loop import ClientCancelled
+                        if isinstance(e, ClientCancelled):
+                            # Socket already gone — nothing left to write.
+                            return
+                        raise
                 except Exception as e:
                     if "stream" in locals() and stream:
                         try:

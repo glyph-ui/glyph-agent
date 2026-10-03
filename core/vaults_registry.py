@@ -267,19 +267,37 @@ def writable_paths() -> List[str]:
     return out
 
 
-def is_private_path(abs_path: str) -> bool:
-    try:
-        real = os.path.realpath(abs_path)
-    except OSError:
-        real = abs_path
-    for p in private_paths():
+def _longest_root(real: str, roots) -> str:
+    """Der spezifischste (längste) Root, unter dem `real` liegt — oder ""."""
+    best = ""
+    for p in roots:
         try:
             root = os.path.realpath(p)
         except OSError:
             root = p
-        if real == root or real.startswith(root + os.sep):
-            return True
-    return False
+        if (real == root or real.startswith(root + os.sep)) and len(root) > len(best):
+            best = root
+    return best
+
+
+def is_private_path(abs_path: str) -> bool:
+    """True, wenn der SPEZIFISCHSTE zuständige Vault privat ist.
+
+    Nicht „irgendein Treffer": das Home-Verzeichnis ist als privater Vault
+    registriert und liegt damit über allen anderen Vaults. Mit der alten
+    Any-Match-Regel galt dadurch JEDER Vault-Pfad als privat — Schreiben war
+    überall gesperrt („Privat-Vault: Schreiben gesperrt"), auch in „HSEQ Sync"
+    mit mode=rw. Deshalb entscheidet der längste passende Root.
+    """
+    try:
+        real = os.path.realpath(abs_path)
+    except OSError:
+        real = abs_path
+    priv = _longest_root(real, private_paths())
+    if not priv:
+        return False
+    other = _longest_root(real, writable_paths())
+    return not (other and len(other) > len(priv))
 
 
 def is_writable_path(abs_path: str) -> bool:

@@ -61,6 +61,7 @@ OPENROUTER_ALLOW_VAULT = os.environ.get("OPENROUTER_ALLOW_VAULT", "false").lower
 #   "direct"     : B+-Standard — Direct-API (DeepSeek/Grok/…) → OpenRouter
 #   "openrouter" : nur OpenRouter
 #   "fallback"   : Alias der alten 2-Stufen-OpenRouter-Kette
+#   "local"      : lokaler OpenAI-kompatibler Server (Ternary Bonsai 2 27B)
 if MODE == "openrouter-chat":
     PROVIDER = "openrouter"
 else:
@@ -74,6 +75,14 @@ OPENROUTER_URL = os.environ.get("OPENROUTER_URL", "https://openrouter.ai/api/v1"
 
 # Direct: OpenAI-kompatibler Primär-Hop. Key: DIRECT_API_KEY oder DEEPSEEK_API_KEY.
 DIRECT_API_URL = os.environ.get("DIRECT_API_URL", "https://api.deepseek.com").rstrip("/")
+
+# Lokal: OpenAI-kompatibler Server auf diesem Rechner — Ternary Bonsai 2 27B
+# (PrismML llama.cpp Fork, siehe ~/.local/bonsai2/bonsai-server). Der Server
+# ignoriert den Key, deshalb genügt ein Platzhalter. Wird NUR benutzt, wenn
+# PROVIDER == "local" — die Cloud-Hops bleiben unberührt.
+LOCAL_API_URL = os.environ.get("LOCAL_API_URL", "http://127.0.0.1:8080/v1").rstrip("/")
+LOCAL_MODEL = os.environ.get("LOCAL_MODEL", "bonsai-2-27b-uncensored")
+LOCAL_API_KEY = os.environ.get("LOCAL_API_KEY", "local")
 
 # Datenschutz-Schranke für Cloud-Anfragen: max. Zeichen, die an ein externes
 # Modell gehen (Tool-Loop kürzt Kontext vor der Übergabe). 0 = unbegrenzt (nicht empfohlen).
@@ -196,6 +205,14 @@ CODE_SHELL_ALLOW = (
 CODE_MAX_ROUNDS = int(os.environ.get("CODE_MAX_ROUNDS", "32"))
 CODE_MAX_TURNS = int(os.environ.get("CODE_MAX_TURNS", "18"))
 AGENT_MAX_ROUNDS = int(os.environ.get("AGENT_MAX_ROUNDS", "8"))
+# Wie oft ein gesperrtes Vault-Werkzeug im Web-Modus noch durchgehen darf,
+# bevor die Schleife beendet und direkt geantwortet wird (0 = sofort).
+AGENT_VAULT_GATE_RETRIES = int(os.environ.get("AGENT_VAULT_GATE_RETRIES", "1"))
+
+# Lokaler Kopf (Ternary Bonsai 2 27B): Prefill fuer ~8.000 Token dauert real
+# ~170 s. Die Cloud-Timeouts (CHAT_TIMEOUT 60 / CODE_CHAT_TIMEOUT 180) kappen
+# den Aufruf mitten im Denken. Gilt nur fuer provider_name == "local".
+LOCAL_CHAT_TIMEOUT = int(os.environ.get("LOCAL_CHAT_TIMEOUT", "600"))
 # Gesamt-Zeichen für CODE-messages[] (system + Turns). 0 = kein Cap.
 CODE_MESSAGE_CHARS = int(os.environ.get("CODE_MESSAGE_CHARS", "64000"))
 

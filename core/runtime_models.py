@@ -32,6 +32,7 @@ PROVIDER_ALIASES = {
     "openrouter": "openrouter",
     "fallback": "openrouter",  # alter Alias: nur OpenRouter
     "hybrid": "hybrid",        # zeitbewusst: Direct ↔ OpenRouter
+    "local": "local",          # lokaler Server (Ternary Bonsai 2 27B)
 }
 
 
@@ -117,9 +118,10 @@ def apply_provider(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not raw:
         return current_models_snapshot()
     mode = _norm_provider(raw)
-    if mode not in ("direct", "openrouter", "hybrid"):
+    if mode not in ("direct", "openrouter", "hybrid", "local"):
         raise ValueError(
-            f"Unbekannter Provider: {raw!r} (erlaubt: direct, openrouter, hybrid, fallback)"
+            f"Unbekannter Provider: {raw!r} "
+            "(erlaubt: direct, openrouter, hybrid, local, fallback)"
         )
     kind = _norm_id(body.get("kind") or "agent").lower()
     if kind == "code":
@@ -204,6 +206,9 @@ def current_models_snapshot() -> Dict[str, Any]:
             "url": getattr(config, "DIRECT_API_URL", None)
             or os.environ.get("DIRECT_API_URL")
             or "https://api.deepseek.com",
+            "openrouter_url": getattr(config, "OPENROUTER_URL", None)
+            or os.environ.get("OPENROUTER_URL")
+            or "https://openrouter.ai/api/v1",
             "key_set": bool(
                 os.environ.get("DIRECT_API_KEY", "").strip()
                 or os.environ.get("DEEPSEEK_API_KEY", "").strip()
@@ -345,6 +350,15 @@ def apply_direct(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         if not or_key:
             os.environ.pop("OPENROUTER_API_KEY", None)
 
+    or_url = _norm_id(
+        body.get("openrouter_url")
+        or body.get("OPENROUTER_URL")
+        or body.get("router_url")
+    )
+    if or_url:
+        config.OPENROUTER_URL = or_url.rstrip("/")
+        _set_env("OPENROUTER_URL", config.OPENROUTER_URL)
+
     factory.reset_provider()
     try:
         llm.get_provider("agent")
@@ -358,6 +372,9 @@ def apply_direct(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     snap = current_models_snapshot()
     snap["direct"] = {
         "url": getattr(config, "DIRECT_API_URL", None),
+        "openrouter_url": getattr(config, "OPENROUTER_URL", None)
+        or os.environ.get("OPENROUTER_URL")
+        or "https://openrouter.ai/api/v1",
         "key_set": bool(
             os.environ.get("DIRECT_API_KEY", "").strip()
             or os.environ.get("DEEPSEEK_API_KEY", "").strip()
@@ -366,14 +383,57 @@ def apply_direct(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return snap
 
 
-def probe_model(model_id: str, timeout: int = 45, kind: str = "agent") -> Dict[str, Any]:
+def hop_creds_for_model(model_id: str, hop: Optional[str] = None) -> Tuple[str, str, str]:
+    """UI-Vertrag: ohne Slash = Direct-Host+Key, mit Slash = Router.
+
+    Der globale Provider-Modus (direct|openrouter|hybrid) gilt für Chat,
+    nicht für den Test-Button. Returns (url, key, hop_name).
     """
-    Minimal OpenRouter chat with the given model id (production key/URL path).
-    Does not permanently change the active model.
+    from .providers.direct import resolve_direct_key, uses_openrouter_slug
+
+    mid = _norm_id(model_id)
+    forced = _norm_provider(hop) if hop else ""
+    if forced in ("direct", "openrouter"):
+        hop_name = forced
+    else:
+        hop_name = "openrouter" if uses_openrouter_slug(mid) else "direct"
+    if hop_name == "openrouter":
+        url = (
+            getattr(config, "OPENROUTER_URL", None)
+            or os.environ.get("OPENROUTER_URL")
+            or "https://openrouter.ai/api/v1"
+        )
+        key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
+        return url, key, "openrouter"
+    url = (
+        getattr(config, "DIRECT_API_URL", None)
+        or os.environ.get("DIRECT_API_URL")
+        or "https://api.deepseek.com"
+    )
+    return url, resolve_direct_key(), "direct"
+
+
+def probe_model(
+    model_id: str,
+    timeout: int = 45,
+    kind: str = "agent",
+    hop: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Ping genau diese Modell-ID auf dem Hop der Slash-Regel.
+
+    Ohne Slash → Direct. Mit Slash → Router. Unabhängig vom Live-Provider.
     """
     mid = _norm_id(model_id)
     if not mid:
         raise ValueError("model ist Pflicht")
+
+    url, key, hop_name = hop_creds_for_model(mid, hop)
+    if not key:
+        raise RuntimeError(
+            "DIRECT_API_KEY nicht gesetzt"
+            if hop_name == "direct"
+            else "OPENROUTER_API_KEY nicht gesetzt"
+        )
 
     p = llm.get_provider(kind)
     if getattr(p, "provider_name", "") not in ("openrouter", "fallback", "direct"):
@@ -398,6 +458,8 @@ def probe_model(model_id: str, timeout: int = 45, kind: str = "agent") -> Dict[s
                 temperature=0,
                 timeout=timeout,
                 model=mid,
+                url=url,
+                api_key=key,
             )
         else:
             text = p.chat(
@@ -409,6 +471,7 @@ def probe_model(model_id: str, timeout: int = 45, kind: str = "agent") -> Dict[s
         return {
             "ok": True,
             "model": mid,
+            "hop": hop_name,
             "preview": (text or "")[:200],
         }
     finally:

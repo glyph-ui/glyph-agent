@@ -16,7 +16,7 @@ import os
 import time
 import urllib.request
 
-from . import config
+from . import config, log
 
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "bge-m3")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
@@ -111,12 +111,31 @@ def cosine(a, b):
 
 # --- Index-Persistenz (JSON) -------------------------------------------------
 
+_INDEX_CACHE = {"key": None, "data": None, "matrix": None, "matrix_pos": None, "matrix_key": None}
+
+
+def _index_file_key():
+    try:
+        st = os.stat(INDEX_PATH)
+        return (INDEX_PATH, int(st.st_mtime_ns), st.st_size)
+    except OSError:
+        return None
+
+
 def load_index():
+    """Index geladen. Gecacht über (Pfad, mtime, Größe) — 24 MB JSON nicht pro Suche parsen."""
+    key = _index_file_key()
+    if key is not None and _INDEX_CACHE.get("key") == key and _INDEX_CACHE.get("data") is not None:
+        return _INDEX_CACHE["data"]
     try:
         with open(INDEX_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
     except (OSError, json.JSONDecodeError):
-        return {"version": 1, "docs": []}
+        data = {"version": 1, "docs": []}
+        key = None
+    _INDEX_CACHE["key"] = key
+    _INDEX_CACHE["data"] = data
+    return data
 
 
 def save_index(index):
@@ -125,6 +144,10 @@ def save_index(index):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(index, f, ensure_ascii=False)
     os.replace(tmp, INDEX_PATH)
+    _INDEX_CACHE["data"] = index
+    _INDEX_CACHE["key"] = _index_file_key()
+    _INDEX_CACHE["matrix"] = None
+    _INDEX_CACHE["matrix_key"] = None
 
 
 def doc_hash(text):
@@ -148,8 +171,12 @@ def index_document(title, path, content, meta=None):
     entries = []
     for sec in sections:
         emb = embed_text(sec["text"])
-        if emb:
-            entries.append({**sec, "embedding": emb})
+        if not emb:
+            # Chunk ohne Embedding NICHT still verwerfen: der Hash würde das
+            # Dokument als erledigt markieren und die Suche verlöre Teile davon.
+            # Besser sichtbar fehlschlagen — der nächste Aufbau versucht erneut.
+            raise RuntimeError(f"Embedding fehlgeschlagen: {path}")
+        entries.append({**sec, "embedding": emb})
     # Alte Einträge desselben Pfads entfernen, neue einfügen.
     index["docs"] = [d for d in index["docs"] if d["path"] != path]
     for e in entries:
@@ -270,7 +297,7 @@ def build_index_from_vault(vault_path=None, quiet=False):
             remove_document(d.get("path"))
             removed += 1
 
-    stats = {"indexed": 0, "unchanged": 0, "failed": 0, "chunks": 0, "removed": removed}
+    stats = {"indexed": 0, "unchanged": 0, "failed": 0, "chunks": 0, "removed": removed, "leer": 0}
     files.sort()
     log(f"vaults: {', '.join(_os.path.basename(r) for r in roots)}")
     log(f"documents discovered: {len(files)}")
@@ -282,6 +309,12 @@ def build_index_from_vault(vault_path=None, quiet=False):
         except OSError as e:
             stats["failed"] += 1
             log(f"  SKIP lesen: {index_path} ({e})")
+            continue
+        if not content.strip():
+            # Leere Notizen (Platzhalter/Templates) haben keinen Inhalt zu suchen
+            # und würden sonst bei jedem Aufbau als „geändert" neu verhandelt —
+            # ohne Chunks gibt es keinen Hash-Eintrag (2026-10-02: 3 Stück).
+            stats["leer"] += 1
             continue
         title = _os.path.splitext(_os.path.basename(full))[0]
         meta = {"vault": True}
@@ -299,6 +332,7 @@ def build_index_from_vault(vault_path=None, quiet=False):
 
     log(f"documents indexed: {stats['indexed']} (geändert/neu)")
     log(f"documents unchanged: {stats['unchanged']}")
+    log(f"documents empty (übersprungen): {stats['leer']}")
     log(f"chunks created: {stats['chunks']}")
     log(f"embeddings created: {stats['chunks']}")
     log(f"stale removed: {stats['removed']}")
@@ -385,6 +419,78 @@ def _keyword_boost(query: str, doc: dict) -> float:
     return boost
 
 
+def _doc_ident(d):
+    return d.get("id") or (str(d.get("path")) + "|" + str(d.get("section") or ""))
+
+
+def _md_matrix():
+    """(matrix, pos) aller .md-Embeddings als float32, L2-normiert — gecacht.
+
+    Der Index bleibt im JSON-Format (Schreibpfad unverändert); nur das Rechnen
+    wandert von der Python-Schleife nach BLAS: 1.080 Docs linear = 1,1 s → ~0,02 s.
+    """
+    try:
+        import numpy as np
+    except Exception:
+        return None, None
+    docs = (load_index().get("docs") or [])
+    key = _index_file_key()
+    if key is not None and _INDEX_CACHE.get("matrix_key") == key:
+        mat, pos = _INDEX_CACHE.get("matrix"), _INDEX_CACHE.get("matrix_pos")
+        if mat is not None and mat.shape[0] == len(docs):
+            return mat, pos
+    dims = {len(d.get("embedding") or []) for d in docs}
+    if not docs or len(dims) != 1 or 0 in dims:
+        return None, None
+    dim = dims.pop()
+    mat = np.zeros((len(docs), dim), dtype=np.float32)
+    pos = {}
+    for i, d in enumerate(docs):
+        emb = d.get("embedding") or []
+        mat[i] = np.asarray(emb, dtype=np.float32)
+        pos[_doc_ident(d)] = i
+    norms = np.linalg.norm(mat, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    mat = mat / norms
+    _INDEX_CACHE["matrix"], _INDEX_CACHE["matrix_pos"], _INDEX_CACHE["matrix_key"] = mat, pos, key
+    return mat, pos
+
+
+def _score_docs(docs, q_emb):
+    """(score, doc)-Paare für alle Docs. numpy wenn möglich, sonst wie bisher."""
+    try:
+        import numpy as np
+    except Exception:
+        return [(cosine(q_emb, d.get("embedding", [])), d) for d in docs]
+    if not docs:
+        return []
+    mat, pos = _md_matrix()
+    if mat is None:
+        return [(cosine(q_emb, d.get("embedding", [])), d) for d in docs]
+    rows = [pos.get(_doc_ident(d)) for d in docs]
+    if any(r is None for r in rows):
+        return [(cosine(q_emb, d.get("embedding", [])), d) for d in docs]
+    q = np.asarray(q_emb, dtype=np.float32)
+    if q.size != mat.shape[1]:
+        return [(cosine(q_emb, d.get("embedding", [])), d) for d in docs]
+    nq = float(np.linalg.norm(q)) or 1.0
+    sims = mat[np.asarray(rows, dtype=np.int64)] @ (q / nq)
+    return list(zip(sims.tolist(), docs))
+
+
+def _pdf_candidates(q_emb, candidate_k, roots=None):
+    """PDF-Chunks aus core/pdf_index.py — leer, wenn Store fehlt oder leer ist."""
+    try:
+        from . import pdf_index
+
+        return pdf_index.search(q_emb, candidate_k=candidate_k, roots=roots) or []
+    except Exception as e:
+        # Nicht still schlucken: hier sah ein fehlendes numpy jahrelang aus wie
+        # "keine PDF-Treffer" und hat die PDF-Suche lautlos abgeschaltet.
+        log.log("pdf_candidates_fail", error=f"{type(e).__name__}: {e}"[:200])
+        return []
+
+
 def search(query, top_k=None, min_score=None, roots=None):
     """
     Semantische Suche im Vektorindex mit Hybrid-Reranking (Vektor + Keyword-Boost).
@@ -414,20 +520,29 @@ def search(query, top_k=None, min_score=None, roots=None):
         from . import vault_scope as _vs
 
         docs = [d for d in docs if _vs.path_in_roots(d.get("path"), roots)]
-    if not docs:
-        return {
-            "status": "empty", "query": query, "candidates": 0, "selected": 0,
-            "threshold": min_score, "sources": [], "results": [],
-        }
     q_emb = embed_text(query)
     if not q_emb:
         return {"status": "error", "query": query, "error": "Embedding fehlgeschlagen"}
 
     # 1) Vektor-Score für alle Docs, sortiert absteigend, Top-CANDIDATE_K behalten
-    scored = []
-    for d in docs:
-        s = cosine(q_emb, d.get("embedding", []))
-        scored.append((s, d))
+    scored = _score_docs(docs, q_emb)
+
+    # 1b) PDF-Chunks aus dem Vektorindex dazu (gleiche Pipeline, gleiche Schwelle)
+    for r in _pdf_candidates(q_emb, candidate_k, roots):
+        scored.append((float(r.get("score") or 0.0), {
+            "id": "pdf:" + str(r.get("path")) + ":" + str(r.get("section") or ""),
+            "title": r.get("title"),
+            "path": r.get("path"),
+            "section": r.get("section") or "",
+            "text": r.get("text") or "",
+            "ts": r.get("ts"),
+        }))
+
+    if not scored:
+        return {
+            "status": "empty", "query": query, "candidates": 0, "selected": 0,
+            "threshold": min_score, "sources": [], "results": [],
+        }
     scored.sort(key=lambda x: x[0], reverse=True)
     candidates = scored[:candidate_k]
 
@@ -528,7 +643,19 @@ def vault_find(query, top_k=None, min_score=None,
         kw_raw = vault_tools.search_vault(query, limit=max(top_k * 5, 20), roots=roots) or []
     except Exception:
         kw_raw = []
-    max_hits = max((int(h.get("hits") or 0) for h in kw_raw), default=0) or 1
+    # PDF-Volltext (FTS5) — gleiche Normalisierung wie die .md-Treffer
+    kw_pdf = []
+    try:
+        from . import pdf_index as _pi
+
+        kw_pdf = _pi.keyword_search(query, limit=max(top_k * 5, 20), roots=roots) or []
+    except Exception:
+        kw_pdf = []
+    max_hits = max(
+        [int(h.get("hits") or 0) for h in kw_raw]
+        + [int(h.get("hits") or 0) for h in kw_pdf]
+        + [0]
+    ) or 1
     kw_by_path = {}
     for h in kw_raw:
         # search_vault liefert rel path; Index nutzt oft /VaultName/rel
@@ -542,6 +669,14 @@ def vault_find(query, top_k=None, min_score=None,
         for p in candidates_paths:
             if p and (p not in kw_by_path or score_kw > kw_by_path[p]):
                 kw_by_path[p] = score_kw
+    # PDF-Treffer: kanonische Pfade, direkt auf den Index-Pfad abbildbar
+    for h in kw_pdf:
+        p = h.get("path") or ""
+        if not p:
+            continue
+        sc = min(1.0, float(h.get("hits") or 0) / float(max_hits))
+        if p not in kw_by_path or sc > kw_by_path[p]:
+            kw_by_path[p] = sc
 
     # Pfade matchen: Keyword-rel → besten Index-Pfad
     def _kw_score_for_index_path(ipath):
@@ -620,7 +755,7 @@ def vault_find(query, top_k=None, min_score=None,
         "sources": sources,
         "results": selected,
         "top_k": top_k,
-        "keyword_hits": len(kw_raw),
+        "keyword_hits": len(kw_raw) + len(kw_pdf),
         "vector_weight": vw,
         "text_weight": tw,
         "error": sem.get("error"),

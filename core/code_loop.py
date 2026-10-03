@@ -19,7 +19,7 @@ import time
 from . import config, llm, log, tool_registry
 from . import code_tools
 from . import code_grants
-from .tool_loop import _is_self_id_question, _run_self_id
+from .tool_loop import ClientCancelled, _is_self_id_question, _run_self_id
 
 MAX_ROUNDS = getattr(config, "CODE_MAX_ROUNDS", 32) or 32
 
@@ -82,8 +82,9 @@ def code_role():
         "Du arbeitest NUR in Workspace-Roots aus `~/.glyph/workspaces.json` "
         "(Modes: r = lesen, r+w = beschreibbar — Apply nur mit Freigabe, "
         "🔒 private = tot).\n"
-        "Werkzeuge: ListDir, ReadFile (offset/limit), Grep, SearchReplace (exakt 1 Treffer), "
-        "WriteFile (Diff+Backup), RunCommand.\n"
+        "Werkzeuge: ListDir, ReadFile (offset/limit — dieselbe Datei nicht in Häppchen walken), "
+        "Grep, SearchReplace (exakt 1 Treffer), "
+        "WriteFile (Diff+Backup), RunCommand, TaskFinish (Glyph-Aufgabe schließen).\n"
         "Wissens-Werkzeuge (read-only): VaultFind (Vault-Suche), ReadNote (Notiz lesen), "
         "WikiGet (memory-wiki), WebSearch (Exa/TinyFish), ExtractUrl (URL lesen), "
         "MailList/MailRead (himalaya), ReadMemory (OpenClaw-Memory: MEMORY.md + Tageslogs).\n"
@@ -117,9 +118,11 @@ def code_role():
         "Map veraltet → nach Struktur-Change dort nachziehen, nicht parallele Doku erfinden.\n"
         "- GROSSE DATEIEN (z. B. App.jsx >100k Zeichen): NICHT komplett in vielen "
         "ReadFile-offset-Häppchen lesen. Nimm zuerst Grep gezielt nach Symbol/Funktion; "
-        "lies nur konkrete Stellen mit ReadFile + großem limit. Keine Endlos-Read-Loops "
-        "über die ganze Datei. Prinzip: gezielt statt vollständig, außer der volle Inhalt "
-        "ist wirklich nötig.\n"
+        "lies nur konkrete Stellen mit ReadFile + großem limit. Dieselbe Datei ein- bis "
+        "zweimal, dann antworten oder Grep — dritter Read desselben Pfads wird blockiert.\n"
+        "- GLYPH-AUFGABE: Vor-Antwort ist Beleg, nicht neu explorieren. Fertig nur mit "
+        "Tool TaskFinish (id aus der Meldung, content = Artefakt-Markdown, summary). "
+        "Chat-Text allein schließt die Aufgabe nicht.\n"
     )
 
 
@@ -414,11 +417,11 @@ def repeat_tool_key(tool_name, args):
             bool(args.get("case_insensitive")),
         )
     if tool_name == "ReadFile":
+        # Offset/limit nicht in den Key: sonst zählt jeder Slice als neu
+        # und der 3×-Schutz greift nie (Walk bis Schleifenschutz).
         return (
             "ReadFile",
             str(args.get("path") or ""),
-            str(args.get("offset") or ""),
-            str(args.get("limit") or ""),
         )
     if tool_name == "ListDir":
         return (
@@ -1008,6 +1011,8 @@ def run_code(
             return
         try:
             on_event(event)
+        except ClientCancelled:
+            raise
         except Exception:
             pass
 
@@ -1488,6 +1493,18 @@ def _loop(
 
     while rounds < max_rounds:
         rounds += 1
+        try:
+            _emit({"type": "_cancel_check"})
+        except ClientCancelled:
+            return {
+                "ok": False,
+                "answer": "",
+                "rounds": rounds,
+                "tool_calls": tool_calls,
+                "pending_confirmation": False,
+                "cancelled": True,
+                "trace": _build_trace(tool_calls, tool_results, steps=steps, model=model_name),
+            }
         # Runde 1: voller System-Prompt (mit Orient-Map).
         # Folge-Runden: lean (ohne Map) — Orient wurde schon gesehen, spart ~5.9k Z.
         sys_prompt = system if rounds == 1 else (system_lean or system)
@@ -1871,6 +1888,13 @@ def _loop(
             root = payload.get("root")
             if root:
                 written_roots.add(root)
+
+        if result.get("ok") and tool_name == "TaskFinish":
+            payload = result.get("result") if isinstance(result.get("result"), dict) else {}
+            art = payload.get("artifact") or ""
+            summary = payload.get("summary") or "Aufgabe geschlossen."
+            answer = f"Aufgabe fertig.\nArtefakt: {art}\n{summary}"
+            return _finish(answer, ok=True)
 
         if should_hard_stop(tool_name, result):
             answer = _hard_fail_answer(tool_name, result)

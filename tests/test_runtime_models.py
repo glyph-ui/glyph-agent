@@ -93,6 +93,30 @@ def test_apply_direct_url():
     assert snap["direct"]["url"] == "https://api.deepseek.com"
 
 
+def test_apply_direct_openrouter_url():
+    """Router-Host (OpenRouter oder Orca) muss den Slash-Hop umbiegen."""
+    os.environ["DIRECT_API_KEY"] = "sk-direct-test"
+    os.environ["OPENROUTER_API_KEY"] = "sk-orca-test"
+    os.environ["OPENROUTER_URL"] = "https://openrouter.ai/api/v1"
+    config.AGENT_PROVIDER = "direct"
+    config.CODE_PROVIDER = "direct"
+    config.PROVIDER = "direct"
+    config.AGENT_PRIMARY_PROVIDER = "direct"
+    factory.reset_provider()
+    stale = factory.get_provider("agent")
+    assert getattr(stale, "_or_url", "") == "https://openrouter.ai/api/v1"
+
+    snap = runtime_models.apply_direct(
+        {"openrouter_url": "https://api.orcarouter.ai/v1"}
+    )
+    live = factory.get_provider("agent")
+    assert live is not stale
+    assert os.environ.get("OPENROUTER_URL") == "https://api.orcarouter.ai/v1"
+    assert config.OPENROUTER_URL == "https://api.orcarouter.ai/v1"
+    assert getattr(live, "_or_url", "") == "https://api.orcarouter.ai/v1"
+    assert (snap.get("direct") or {}).get("openrouter_url") == "https://api.orcarouter.ai/v1"
+
+
 def test_apply_direct_replaces_live_key():
     """Graph-Schreiben muss den Singleton neu bauen — Mutieren reicht nicht."""
     os.environ["DIRECT_API_KEY"] = "old-key-73c9"
@@ -214,11 +238,71 @@ def test_provider_code_only_keeps_agent():
     assert snap["code_provider_mode"] == "direct"
 
 
+def test_probe_direct_id_hits_direct_host_when_provider_is_router():
+    """Graph-Pille Direkt: Testen darf nicht Orca anrufen."""
+    os.environ["OPENROUTER_URL"] = "https://api.orcarouter.ai/v1"
+    os.environ["OPENROUTER_API_KEY"] = "sk-orca-test"
+    os.environ["DIRECT_API_URL"] = "https://api.deepseek.com"
+    os.environ["DIRECT_API_KEY"] = "sk-direct-test"
+    config.OPENROUTER_URL = "https://api.orcarouter.ai/v1"
+    config.DIRECT_API_URL = "https://api.deepseek.com"
+    config.AGENT_PROVIDER = "openrouter"
+    config.PROVIDER = "openrouter"
+    config.AGENT_PRIMARY_PROVIDER = "openrouter"
+    factory.reset_provider()
+    p = factory.get_provider("agent")
+    assert p.provider_name == "openrouter"
+    captured = {}
+
+    def fake(messages, temperature, timeout=None, model=None, url=None, api_key=None):
+        captured["model"] = model
+        captured["url"] = url if url is not None else p.url
+        captured["api_key"] = api_key if api_key is not None else p.api_key
+        return "ok"
+
+    p._chat_completion = fake
+    result = runtime_models.probe_model("deepseek-v4-flash-vision-exp")
+    assert result["ok"] is True
+    assert captured["model"] == "deepseek-v4-flash-vision-exp"
+    assert "orcarouter" not in str(captured["url"])
+    assert "deepseek.com" in str(captured["url"])
+    assert captured["api_key"] == "sk-direct-test"
+
+
+def test_probe_slash_id_hits_router_host():
+    os.environ["OPENROUTER_URL"] = "https://api.orcarouter.ai/v1"
+    os.environ["OPENROUTER_API_KEY"] = "sk-orca-test"
+    os.environ["DIRECT_API_URL"] = "https://api.deepseek.com"
+    os.environ["DIRECT_API_KEY"] = "sk-direct-test"
+    config.OPENROUTER_URL = "https://api.orcarouter.ai/v1"
+    config.DIRECT_API_URL = "https://api.deepseek.com"
+    config.AGENT_PROVIDER = "direct"
+    config.PROVIDER = "direct"
+    config.AGENT_PRIMARY_PROVIDER = "direct"
+    factory.reset_provider()
+    p = factory.get_provider("agent")
+    captured = {}
+
+    def fake(messages, temperature, timeout=None, model=None, url=None, api_key=None):
+        captured["url"] = url if url is not None else p.url
+        captured["api_key"] = api_key if api_key is not None else p.api_key
+        captured["model"] = model
+        return "ok"
+
+    p._chat_completion = fake
+    result = runtime_models.probe_model("z-ai/glm-5.3-flash")
+    assert result["ok"] is True
+    assert captured["model"] == "z-ai/glm-5.3-flash"
+    assert "orcarouter.ai" in str(captured["url"])
+    assert captured["api_key"] == "sk-orca-test"
+
+
 if __name__ == "__main__":
     test_apply_shared_and_clear_fallback()
     test_code_override()
     test_apply_vision_sets_code_vision_model()
     test_apply_direct_url()
+    test_apply_direct_openrouter_url()
     test_apply_direct_replaces_live_key()
     test_provider_alias_normalization()
     test_apply_provider_openrouter()
@@ -227,4 +311,6 @@ if __name__ == "__main__":
     test_hybrid_peak_hop()
     test_provider_per_kind()
     test_provider_code_only_keeps_agent()
+    test_probe_direct_id_hits_direct_host_when_provider_is_router()
+    test_probe_slash_id_hits_router_host()
     print("ok")
