@@ -160,6 +160,12 @@ Alle Werte in `core/config.py` bzw. per Umgebungsvariable/`.env`.
 | `OPENROUTER_FALLBACK_MODEL` | `deepseek/deepseek-v4-flash-0731` | Reserve im Chat-Modus |
 | `EXTERNAL_MAX_CHARS` | `4000` | Kürzung vor Cloud-Übergabe |
 | `OPENROUTER_API_KEY` | — | Pflicht für Chat |
+| `GLYPH_SEARCH_BRIDGE` | `1` | Suchbrücke: Rückfrage + Verlauf → eigenständige Suchbegriffe (0 = aus, wörtlich wie vorher) |
+| `GLYPH_SEARCH_BRIDGE_MODEL` | (leer) | Modell der Suchbrücke; leer = aktives Agent-Modell |
+| `GLYPH_SEARCH_BRIDGE_TIMEOUT` | `8` | Hartes Zeitlimit des Brücken-Calls (s), danach Regel-Fallback |
+| `GLYPH_SEARCH_BRIDGE_QUERIES` | `2` | Suchanfragen pro Turn (Think → Search → Search) |
+| `GLYPH_SEARCH_BRIDGE_TURNS` / `_CHARS` | `6` / `2500` | Verlaufsfenster im Brücken-Prompt |
+| `WEB_CTX_HITS` | `7` | Treffer-Obergrenze im Antwort-Kontext (gemischt über alle Anfragen) |
 
 **Beispiel:**
 
@@ -210,7 +216,7 @@ glyph-agent/
 | ReadNote / **WikiGet** / Summarize | Vault lesen |
 | CreateNote / ProposeEdit / ApplyEdit / **WikiApply** | Vault schreiben (Confirm) |
 | **WikiStatus** | agent-digest Stats (read-only) |
-| WebSearch (Exa) | grobe Websuche |
+| WebSearch (Exa) | grobe Websuche — Anfrage kommt aus der **Suchbrücke** (`core/query_bridge.py`), die Rückfragen mit dem Chat-Verlauf auflöst |
 | ExtractUrl / FetchUrl / **BrowseUrl** (TinyFish) | feine Zielseiten / Summary |
 | **ReadPdf** | PDF im Vault via pdftotext (graceful) |
 | **MailList** / **MailRead** | himalaya (graceful) |

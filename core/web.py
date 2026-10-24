@@ -177,7 +177,7 @@ def extract_tinyfish(url, goal, timeout=None):
     return found if found is not None else {"error": "kein COMPLETE", "url": url}
 
 
-def fetch_tinyfish(url, fmt="markdown"):
+def fetch_tinyfish(url, fmt="markdown", timeout=30):
     """
     Holt den Inhalt einer URL (markdown|text|html). Liefert Text/JSON.
     """
@@ -191,7 +191,7 @@ def fetch_tinyfish(url, fmt="markdown"):
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read().decode("utf-8")
 
 
@@ -212,13 +212,38 @@ def browse_url(url, goal=None, timeout=None):
 
 
 # --- Dispatch (für Tool-Registry) ------------------------------------------
-def web_search(query, count=5, source="both", include_domains=None):
+# So viele Zeichen Volltext werden an die Top-Treffer gehängt (wie Vault-Top-2).
+TOP_TEXT_CHARS = 8000
+# Aufgefüllt werden nur die relevantesten Treffer einer Suche.
+TOP_TEXT_ROWS = 2
+# Ein hänger Fetch darf die Suche nicht blockieren.
+TOP_TEXT_TIMEOUT = 12
+
+
+def web_search(query, count=5, source="both", include_domains=None, attach_top=TOP_TEXT_ROWS):
     """
     Kontrollierte Websuche. Default: Exa und TinyFish parallel, URLs mergen.
     source: "both" (Standard) | "exa" | "tinyfish".
+    Ohne include_domains: offene Suche; zusätzlich Amtssuche NUR bei
+    Rechts-/HSEQ-Fragen (research.is_legal_query). Sortierung nach Relevanz
+    zur Anfrage, die Stufe bricht nur den Gleichstand — amtliche Treffer ohne
+    Bezug zum Suchbegriff rutschen nach unten, nichts wird verworfen.
+    Die `attach_top` relevantesten Treffer werden zusätzlich als Volltext
+    (`text`, max. TOP_TEXT_CHARS Zeichen) angehängt, damit aus Inhalten
+    geantwortet wird statt aus Snippets.
+    include_domains bleibt ein harter Filter (Apfel-Fallback) ohne Ranking.
     query darf nur anonymisierte Suchbegriffe enthalten.
     """
     src = (source or "both").strip().lower()
+    if src not in ("exa", "tinyfish", "both"):
+        src = "both"
+    if include_domains:
+        return _search_sources(query, count, src, include_domains)
+    ranked = _search_ranked(query, count, src)
+    return _attach_contents(ranked, attach_top)
+
+
+def _search_sources(query, count, src, include_domains):
     if src == "tinyfish":
         return search_tinyfish(query, count=count, include_domains=include_domains)
     if src == "exa":
@@ -228,28 +253,126 @@ def web_search(query, count=5, source="both", include_domains=None):
 
 def _search_both(query, count=5, include_domains=None):
     """Exa + TinyFish gleichzeitig. Ein Ausfall lässt die andere Quelle stehen."""
-    buckets = {"exa": [], "tinyfish": []}
+    buckets = _gather(query, count, ("exa", "tinyfish"), [include_domains])
+    return _merge_search_rows(buckets[("exa", 0)], buckets[("tinyfish", 0)], count)
 
-    def _run(name):
-        if name == "exa":
-            return search_exa(query, count=count, include_domains=include_domains)
-        return search_tinyfish(query, count=count, include_domains=include_domains)
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        futs = {pool.submit(_run, name): name for name in ("exa", "tinyfish")}
-        for fut in as_completed(futs):
-            name = futs[fut]
+def _search_ranked(query, count, src):
+    """Offene Suche, bei Rechts-/HSEQ-Fragen zusätzlich Amtssuche.
+
+    Sortierung: Relevanz zur Anfrage zuerst (`source_rank.rank_key`), die
+    Quellen-Stufe entscheidet nur bei Gleichstand. Treffer ohne Bezug bleiben
+    erhalten, landen aber hinter jedem passenden Treffer.
+    """
+    from .research import is_legal_query
+    from .source_rank import annotate, preferred_domains, rank_key, relevance
+
+    names = ("exa", "tinyfish") if src == "both" else (src,)
+    passes = [None]
+    if is_legal_query(query):
+        passes.append(preferred_domains())
+    buckets = _gather(query, count, names, passes)
+    flat = []
+    for name in names:
+        for idx in range(len(passes)):
+            flat.extend(buckets.get((name, idx)) or [])
+    deduped = _dedupe_rows(flat)
+    ranked = []
+    for row in deduped:
+        item = annotate(row)
+        if isinstance(item, dict):
+            item["relevance"] = relevance(query, item)
+        ranked.append(item)
+    ranked.sort(key=lambda r: rank_key(query, r))
+    return ranked[:count]
+
+
+def _attach_contents(rows, top):
+    """Volltext der `top` relevantesten Treffer nachladen (TinyFish Fetch)."""
+    try:
+        top = int(top)
+    except (TypeError, ValueError):
+        top = 0
+    targets = [r for r in (rows or [])[:top] if isinstance(r, dict) and r.get("url")]
+    if not targets:
+        return rows
+
+    def _fetch(row):
+        try:
+            raw = fetch_tinyfish(row["url"], "markdown", timeout=TOP_TEXT_TIMEOUT)
+        except Exception:
+            return ""
+        return _as_text(raw)
+
+    with ThreadPoolExecutor(max_workers=max(1, len(targets))) as pool:
+        texts = list(pool.map(_fetch, targets))
+    text_by_row = {id(r): t for r, t in zip(targets, texts)}
+    out = []
+    for row in rows:
+        item = dict(row)
+        text = text_by_row.get(id(row))
+        if text:
+            item["text"] = text[:TOP_TEXT_CHARS]
+        out.append(item)
+    return out
+
+
+def _as_text(raw):
+    """Beliebige Fetch-Antwort (Text/JSON/Listen) tolerant zu reinem Text."""
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        s = raw.strip()
+        if s.startswith("{") or s.startswith("["):
             try:
-                buckets[name] = fut.result() or []
+                return _as_text(json.loads(s))
             except Exception:
-                buckets[name] = []
-    return _merge_search_rows(buckets["exa"], buckets["tinyfish"], count)
+                return s
+        return s
+    if isinstance(raw, dict):
+        for key in ("content", "text", "markdown", "body", "result", "data"):
+            v = raw.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        for key in ("results", "pages", "documents"):
+            v = raw.get(key)
+            if isinstance(v, list):
+                return "\n".join(t for t in (_as_text(x) for x in v) if t)
+        return ""
+    if isinstance(raw, list):
+        return "\n".join(t for t in (_as_text(x) for x in raw) if t)
+    return str(raw)
+
+
+def _gather(query, count, names, domain_passes):
+    """(name, index) → Zeilen. Index 0 ist der erste Durchgang."""
+    tasks = [(name, idx, dom) for name in names for idx, dom in enumerate(domain_passes)]
+
+    def _run(name, domains):
+        if name == "exa":
+            return search_exa(query, count=count, include_domains=domains)
+        return search_tinyfish(query, count=count, include_domains=domains)
+
+    out = {(name, idx): [] for name, idx, _dom in tasks}
+    with ThreadPoolExecutor(max_workers=max(1, len(tasks))) as pool:
+        futs = {pool.submit(_run, name, dom): (name, idx) for name, idx, dom in tasks}
+        for fut in as_completed(futs):
+            key = futs[fut]
+            try:
+                out[key] = fut.result() or []
+            except Exception:
+                out[key] = []
+    return out
 
 
 def _merge_search_rows(exa_rows, tinyfish_rows, count=5):
+    return _dedupe_rows(list(exa_rows or []) + list(tinyfish_rows or []))[:count]
+
+
+def _dedupe_rows(rows):
     seen = set()
     out = []
-    for row in list(exa_rows or []) + list(tinyfish_rows or []):
+    for row in rows or []:
         if not isinstance(row, dict):
             continue
         url = _norm_url(row.get("url"))
@@ -259,8 +382,6 @@ def _merge_search_rows(exa_rows, tinyfish_rows, count=5):
         item = dict(row)
         item["url"] = url
         out.append(item)
-        if len(out) >= count:
-            break
     return out
 
 

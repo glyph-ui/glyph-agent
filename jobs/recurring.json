@@ -14,10 +14,10 @@
       "paused": false,
       "allow_write": true,
       "created_at": "2026-08-08T23:03:05+02:00",
-      "last_run_at": "2026-10-02T20:23:08+02:00",
+      "last_run_at": "2026-10-23T22:58:23+02:00",
       "last_status": "ok",
-      "last_answer_preview": "Aus Fertig lernen: nichts Neues\n\nEin Änderungsbedarf wäre nur bei einer wiederkehrenden Vorlagen-/Themen-Lücke belegbar gewesen. Der geprüfte Bericht `/HSEQ Sync/00 Arbeitsfluss/Fertig/2026-09-22 Auditbericht - Musterstadt.md` folgt dem gefrorenen Form-SoT (4 Spalten, Typ-B-Hinweis, Maßnahmenplan-Zeile) und hält die Prüfmittel in 7.1.5 — konsistent mit `Vorlagen/Jobs/PROMPT-Aus-Fertig-lernen.md`, kein An",
-      "last_stamp": "2026-10-02"
+      "last_answer_preview": "<tool_call>ReadNote({\"path\": \"HSEQ Sync/Vorlagen/Jobs/PROMPT-Aus-Fertig-lernen.md\"})",
+      "last_stamp": "2026-10-23"
     },
     {
       "id": "td-memory",
@@ -30,10 +30,10 @@
       "paused": false,
       "allow_write": false,
       "created_at": "2026-08-09T11:33:15+02:00",
-      "last_run_at": "2026-10-03T03:08:38+02:00",
+      "last_run_at": "2026-10-24T03:13:28+02:00",
       "last_status": "ok",
-      "last_answer_preview": "Memory-Hygiene 2026-10-03\nDaily: neu (2026-10-03.md)\nMEMORY PII: 0 → clean",
-      "last_stamp": "2026-10-03",
+      "last_answer_preview": "Memory-Hygiene 2026-10-24\nDaily: neu (2026-10-24.md)\nMEMORY PII: 0 → clean",
+      "last_stamp": "2026-10-24",
       "script": "memory_hygiene.py"
     },
     {
@@ -47,10 +47,10 @@
       "paused": false,
       "allow_write": false,
       "created_at": "2026-08-20T23:20:00+02:00",
-      "last_run_at": "2026-10-03T03:23:39+02:00",
+      "last_run_at": "2026-10-24T03:28:29+02:00",
       "last_status": "ok",
-      "last_answer_preview": "Wiki-Hygiene (2026-10-03 03:23 Europe/Berlin) [apply]\nPfad: /Users/lxndrhbrt/ObsidianVaults/memory-wiki\nSeiten: 24 | Sources: 12\nPlan: 0 | Moved: 0 | Purged: 0 | Link-Fixes: 0\nDead Links: 67 | Orphan Sources: 0\nPII Hits: 10 | Secrets: 0\nDigest: 36 Seiten (+0, stale-index 0)",
-      "last_stamp": "2026-10-03",
+      "last_answer_preview": "Wiki-Hygiene (2026-10-24 03:28 Europe/Berlin) [apply]\nPfad: /Users/lxndrhbrt/ObsidianVaults/memory-wiki\nSeiten: 24 | Sources: 12\nPlan: 0 | Moved: 0 | Purged: 0 | Link-Fixes: 0\nDead Links: 69 | Orphan Sources: 0\nPII Hits: 10 | Secrets: 0\nDigest: 36 Seiten (+0, stale-index 0)",
+      "last_stamp": "2026-10-24",
       "script": "wiki_hygiene.py"
     },
     {
@@ -64,10 +64,10 @@
       "paused": false,
       "allow_write": false,
       "created_at": "2026-08-09T11:33:15+02:00",
-      "last_run_at": "2026-10-03T06:08:46+02:00",
+      "last_run_at": "2026-10-24T06:13:37+02:00",
       "last_status": "ok",
-      "last_answer_preview": "Session-Cleanup 2026-10-03: skip — openclaw CLI nicht gefunden (Glyph-only ok)",
-      "last_stamp": "2026-10-03",
+      "last_answer_preview": "Session-Cleanup 2026-10-24: skip — openclaw CLI nicht gefunden (Glyph-only ok)",
+      "last_stamp": "2026-10-24",
       "script": "session_cleanup_legacy.py"
     },
     {
@@ -102,6 +102,24 @@
       "last_status": "ok",
       "last_answer_preview": "Handover: ruhig (2026-09-04) — Neu: — · Offen: — · Konflikt/Stale: —",
       "last_stamp": "2026-09-04"
+    },
+    {
+      "id": "td-inbox-sync",
+      "title": "Vault-Inbox Sync",
+      "prompt": "(script) vault_inbox_sync.py — Scan/Downloads/Beruf → Vault-Kopie + Wikilink",
+      "pass": "Eine stdout-Zeile inbox hseq=… intern=… privat=…",
+      "schedule": {
+        "kind": "daily",
+        "time": "07:00"
+      },
+      "paused": false,
+      "allow_write": false,
+      "script": "vault_inbox_sync.py",
+      "created_at": "2026-10-10T13:21:53+02:00",
+      "last_run_at": "2026-10-24T07:13:42+02:00",
+      "last_status": "ok",
+      "last_answer_preview": "inbox hseq=0 intern=0 privat=0 dup=2742 secret=3 index_queue=0",
+      "last_stamp": "2026-10-24"
     }
   ],
   "migrated_nightly_v1": true

@@ -51,6 +51,9 @@ class ResearchPolicyTests(unittest.TestCase):
         self.assertIn("Exa", t)
         self.assertIn("soziale", t.lower())
         self.assertIn("allgemeine", t.lower())
+        self.assertNotIn("Nicht den KomNet", t)
+        self.assertIn("Stufe 1", t)
+        self.assertIn("komnet.nrw.de", t)
 
     def test_apple_keeps_komnet_dguv_not_social(self):
         t = research.policy_prompt_snippet("apple")

@@ -34,6 +34,11 @@ class PdfOcrFallbackTests(unittest.TestCase):
                 f.write(b"%PDF-1.4\n")
         self._old_ptt = pdf_tools._pdftotext_bin
         self._old_ocr = pdf_tools._ocr_bin
+        self._old_backend = pdf_tools.ocr_backend
+        # Isolation: Live-LightOn (Port 8790) darf diese Vision-Tests nicht übernehmen.
+        pdf_tools.ocr_backend = lambda preferred=None: (
+            "vision" if pdf_tools._ocr_bin() else None
+        )
         # pdftotext-Fake: scan.pdf -> kein Text, text.pdf -> genug Text
         self.ptt = _script(
             os.path.join(self.root, "pdftotext-fake"),
@@ -51,6 +56,7 @@ class PdfOcrFallbackTests(unittest.TestCase):
     def tearDown(self):
         pdf_tools._pdftotext_bin = self._old_ptt
         pdf_tools._ocr_bin = self._old_ocr
+        pdf_tools.ocr_backend = self._old_backend
         config.VAULT_PATHS = self._old_paths
         config.VAULT_PATH = self._old_path
         self.td.cleanup()

@@ -48,6 +48,9 @@ AGENT_OPENROUTER_MODEL = os.environ.get(
 AGENT_OPENROUTER_FALLBACK_MODEL = os.environ.get(
     "AGENT_OPENROUTER_FALLBACK_MODEL", "deepseek/deepseek-v4-flash-0731"
 )
+# ^_Code bleibt unabhängig (hybrid = Direct außerhalb der Peak-Zeit, sonst Router).
+# Fehlt das Attribut, erbt der Code-Kopf AGENT_PROVIDER — und damit den Agent-Host.
+CODE_PROVIDER = os.environ.get("CODE_PROVIDER", "hybrid")
 
 # --- OpenRouter-Chat-Modus (MODE=openrouter-chat) ---
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "deepseek-v4-flash-vision-exp")
@@ -152,6 +155,11 @@ CODE_BACKUP_DIR = os.environ.get(
     "CODE_BACKUP_DIR",
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "vault", "code_backups"),
 )
+# ^_tick: Job-Ordner (Daily/Inbox/Blocked/Done/Log) — sichtbarer Routine-Zustand
+# im Vault. Env-Override für Tests/andere Ablage.
+ROUTINES_ROOT = os.path.expanduser(
+    os.environ.get("GLYPH_ROUTINES_ROOT", "~/ObsidianVaults/memory-wiki/Routinen")
+)
 CODE_SHELL_TIMEOUT = int(os.environ.get("CODE_SHELL_TIMEOUT", "60"))
 # Hartes Total-Timeout für OpenRouter-Chat-Calls (Wall-Clock, nicht nur Socket).
 # Verhindert endloses Blockieren von resp.read() und damit Server-Einfrieren.
@@ -215,6 +223,23 @@ AGENT_VAULT_GATE_RETRIES = int(os.environ.get("AGENT_VAULT_GATE_RETRIES", "1"))
 LOCAL_CHAT_TIMEOUT = int(os.environ.get("LOCAL_CHAT_TIMEOUT", "600"))
 # Gesamt-Zeichen für CODE-messages[] (system + Turns). 0 = kein Cap.
 CODE_MESSAGE_CHARS = int(os.environ.get("CODE_MESSAGE_CHARS", "64000"))
+
+# --- Suchbrücke (Query-Bridge, core/query_bridge.py) ------------------------
+# Rückfragen („wie oft muss ich das tun?") werden mit dem Chat-Verlauf zu
+# eigenständigen Suchbegriffen, BEVOR sie an Exa/TinyFish gehen. Ohne Verlauf
+# und ohne Kontextbezug läuft kein Modellcall (erste Frage bleibt unverändert).
+SEARCH_BRIDGE = os.environ.get("GLYPH_SEARCH_BRIDGE", "1").lower() not in (
+    "0", "false", "off", "no",
+)
+# Leer = aktives Agent-Modell (aktuell Haiku 5.5) — derselbe Hop, der antwortet.
+SEARCH_BRIDGE_MODEL = os.environ.get("GLYPH_SEARCH_BRIDGE_MODEL", "").strip()
+# Hartes Zeitlimit des Brücken-Calls. Danach greift der Regel-Fallback.
+SEARCH_BRIDGE_TIMEOUT = int(os.environ.get("GLYPH_SEARCH_BRIDGE_TIMEOUT", "8"))
+# Höchstens so viele Suchanfragen pro Turn (Think → Search → Search).
+SEARCH_BRIDGE_QUERIES = int(os.environ.get("GLYPH_SEARCH_BRIDGE_QUERIES", "2"))
+# Verlaufsfenster im Brücken-Prompt (Turns / Zeichen).
+SEARCH_BRIDGE_TURNS = int(os.environ.get("GLYPH_SEARCH_BRIDGE_TURNS", "6"))
+SEARCH_BRIDGE_CHARS = int(os.environ.get("GLYPH_SEARCH_BRIDGE_CHARS", "2500"))
 
 # Geschützte Ordner(namen) im Vault — werden von SUCHEN/LESEN/EDITIEREN ausgeschlossen.
 BLOCKED_DIRS = [

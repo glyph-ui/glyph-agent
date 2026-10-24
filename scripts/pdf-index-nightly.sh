@@ -24,6 +24,7 @@ fi
 trap 'rm -rf "$LOCK"' EXIT
 
 echo "$STAMP Start (inkrementell)"
+# workers: build_pdf_index cappt LightOnOCR automatisch auf 1 (MLX-Lock).
 /opt/homebrew/bin/python3.11 "$HOME/glyph-agent/scripts/build_pdf_index.py" --workers 4
 RC=$?
 echo "$STAMP Ende (exit $RC)"

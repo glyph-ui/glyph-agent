@@ -111,6 +111,15 @@ def _init(conn):
             conn.execute("ALTER TABLE files ADD COLUMN dup_of TEXT")
     except sqlite3.OperationalError:
         pass
+    # Migration: Seiten-/OCR-Zähler (seitenweise Extraktion seit 2026-10-09)
+    try:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(files)")}
+        if "pages" not in cols:
+            conn.execute("ALTER TABLE files ADD COLUMN pages INTEGER")
+        if "ocr_pages" not in cols:
+            conn.execute("ALTER TABLE files ADD COLUMN ocr_pages INTEGER")
+    except sqlite3.OperationalError:
+        pass
     # FTS nachziehen, falls die Tabelle neu angelegt wurde (nur dann teuer)
     try:
         if (conn.execute("SELECT 1 FROM docs LIMIT 1").fetchone()
@@ -237,14 +246,17 @@ def add_file(conn, path, title, chunks, vectors, file_meta=None):
                 file_meta["status"] = "dup"
     if file_meta is not None:
         conn.execute(
-            "INSERT INTO files(path, mtime, size, sha, status, chars, chunks, engine, dup_of, ts) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET "
+            "INSERT INTO files(path, mtime, size, sha, status, chars, chunks, engine, dup_of, "
+            "pages, ocr_pages, ts) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET "
             "mtime=excluded.mtime, size=excluded.size, sha=excluded.sha, status=excluded.status, "
             "chars=excluded.chars, chunks=excluded.chunks, engine=excluded.engine, "
-            "dup_of=excluded.dup_of, ts=excluded.ts",
+            "dup_of=excluded.dup_of, pages=excluded.pages, ocr_pages=excluded.ocr_pages, "
+            "ts=excluded.ts",
             (path, file_meta.get("mtime"), file_meta.get("size"), file_meta.get("sha"),
              file_meta.get("status"), file_meta.get("chars"), len(keep_chunks),
-             file_meta.get("engine"), dup_of, now),
+             file_meta.get("engine"), dup_of, file_meta.get("pages"),
+             file_meta.get("ocr_pages"), now),
         )
     _bump(conn)
     conn.commit()
@@ -254,12 +266,14 @@ def add_file(conn, path, title, chunks, vectors, file_meta=None):
 
 def file_state(conn, path):
     row = conn.execute(
-        "SELECT mtime, size, sha, status, chars, chunks, engine, dup_of FROM files WHERE path=?",
+        "SELECT mtime, size, sha, status, chars, chunks, engine, dup_of, pages, ocr_pages "
+        "FROM files WHERE path=?",
         (str(path),),
     ).fetchone()
     if not row:
         return None
-    keys = ("mtime", "size", "sha", "status", "chars", "chunks", "engine", "dup_of")
+    keys = ("mtime", "size", "sha", "status", "chars", "chunks", "engine", "dup_of",
+            "pages", "ocr_pages")
     return dict(zip(keys, row))
 
 

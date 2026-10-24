@@ -24,6 +24,7 @@ import os
 import socket
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from . import ModelProvider
@@ -31,6 +32,15 @@ from .. import log as _agent_log
 from .. import config as _cfg
 
 log = logging.getLogger("glyph-agent.openrouter")
+
+
+def _anthropic_compat(url):
+    """Claude-Platform lehnt temperature ab (Haiku 5.5: HTTP 400)."""
+    try:
+        host = (urllib.parse.urlparse(str(url or "")).hostname or "").lower()
+    except Exception:
+        return False
+    return host == "api.anthropic.com"
 
 
 def _part_text(part):
@@ -163,7 +173,7 @@ def _resolve_chat_timeout(timeout=None):
     except Exception:
         pass
     mode = getattr(_cfg, "MODE", "agent") or "agent"
-    if str(mode).lower() == "code":
+    if str(mode).lower() in ("code", "tick"):
         raw = getattr(_cfg, "CODE_CHAT_TIMEOUT", None)
     else:
         raw = getattr(_cfg, "CHAT_TIMEOUT", None)
@@ -325,9 +335,11 @@ class OpenRouterProvider(ModelProvider):
         payload = {
             "model": m,
             "messages": messages,
-            "temperature": temperature,
             "stream": False,
         }
+        # Haiku 5.5 auf api.anthropic.com: "`temperature` is deprecated".
+        if not _anthropic_compat(use_url):
+            payload["temperature"] = temperature
         # Reasoning-Pflicht-Modelle (z.B. GLM 5.3 Flash) denken ohne max_tokens
         # endlos → 60s+ Latenz. Ein vernünftiges Cap hält Antwort + Tool-JSON
         # möglich, begrenzt aber das Reasoning. Konfigurierbar via MAX_TOKENS.
@@ -425,6 +437,11 @@ class OpenRouterProvider(ModelProvider):
             raise e
 
         data = box["data"] or {}
+        try:
+            from ..usage_meter import add_payload
+            add_payload(data)
+        except Exception:
+            pass
         text = _message_text(data)
         # Leere Completion ist KEIN Erfolg: das Modell hat nichts Sinnvolles geliefert
         # (z. B. nur reasoning_content oder leerer content), obwohl der HTTP-Call ok war.

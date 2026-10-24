@@ -24,6 +24,8 @@ ALIAS = {
     "wiki": "td-wiki-hygiene",
     "session-cleanup": "td-cleanup",
     "cleanup": "td-cleanup",
+    "inbox": "td-inbox-sync",
+    "vault-inbox": "td-inbox-sync",
 }
 
 

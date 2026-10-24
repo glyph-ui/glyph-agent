@@ -254,6 +254,9 @@ def _handle_chat(payload, send=None):
           finale Antwort am Ende. Fehlt send, wird alles blockierend berechnet
           und nur das Ergebnis-Dict zurückgegeben (rückwärtskompatibel).
     """
+    from core import usage_meter
+    usage_meter.reset()
+
     message = (payload or {}).get("message", "")
     attachments = (payload or {}).get("attachments")
     images = _normalize_images((payload or {}).get("images"))
@@ -359,8 +362,8 @@ def _handle_chat(payload, send=None):
             send({"type": "done", **result})
         return result
 
-    # --- CODE-Modus (^_Code): DeepSeek + Workspace-Tools, kein Vault ---
-    if req_mode == "code":
+    # --- CODE-Modus (^_Code) / TICK-Modus (^_tick): DeepSeek + Workspace-Tools, kein Vault ---
+    if req_mode in ("code", "tick"):
         resume_token = (payload or {}).get("resume_token")
         allow_pending = (payload or {}).get("allow_pending")
         # allow_pending kann True/False sein; None = kein Resume
@@ -376,6 +379,7 @@ def _handle_chat(payload, send=None):
             conversation_history=conversation_history,
             grant_scope=(payload or {}).get("grant_scope"),
             grant_spec=(payload or {}).get("grant_spec"),
+            head=("tick" if req_mode == "tick" else "code"),
         )
         p = llm.get_provider("code")
         used_model = (
@@ -387,7 +391,7 @@ def _handle_chat(payload, send=None):
         result = {
             "used_provider": p.provider_name,
             "used_model": used_model,
-            "mode": "code",
+            "mode": req_mode,
             **result,
         }
         if "pending_confirmation" not in result:
@@ -412,6 +416,7 @@ def _handle_chat(payload, send=None):
         vault_search=vault_search,
         vault_selected=vault_selected,
     )
+    result = _ensure_chat_file(message, result, send, conversation_history)
     # Modell-Info anhängen (Primär Luna oder Free-Fallback).
     p = llm.get_provider()
     used_model = getattr(p, "_active_model", None) or p.model_name
@@ -424,6 +429,31 @@ def _handle_chat(payload, send=None):
     }
     if send:
         send({"type": "done", **result})
+    return result
+
+
+def _ensure_chat_file(message, result, send, history=None):
+    """Datei-Wunsch ohne ChatDatei: aus Vorlage im Verlauf trotzdem den Chat-Link bauen."""
+    if not isinstance(result, dict):
+        return result
+    calls = result.get("tool_calls") or []
+    if any(isinstance(c, dict) and c.get("tool") == "ChatDatei" and c.get("ok") for c in calls):
+        return result
+    from core import chat_file
+
+    out = chat_file.from_answer(message, result.get("answer") or "", history)
+    if not out or not out.get("ok"):
+        return result
+    inner = out.get("result") or {}
+    if send and inner.get("data"):
+        send({
+            "type": "chat_file",
+            "title": inner.get("title") or "Datei",
+            "name": inner.get("name") or "Datei.pdf",
+            "mime": inner.get("mime") or "application/pdf",
+            "text": inner.get("text") or "",
+            "data": inner.get("data"),
+        })
     return result
 
 
@@ -488,7 +518,7 @@ def _handle_health():
         "primary_model": (snap.get("shared") or {}).get("primary"),
         "fallback_model": (snap.get("shared") or {}).get("fallback"),
         "models": snap,
-        "modes": ["agent", "code", "openrouter-chat"],
+        "modes": ["agent", "code", "tick", "openrouter-chat"],
     }
 
 
@@ -729,6 +759,13 @@ def main():
             elif path in ("/code/grants", "/code/grants/"):
                 try:
                     self._send(200, agent_grants.public_snapshot())
+                except Exception as e:
+                    self._send(500, {"ok": False, "error": str(e)})
+            elif path in ("/routines/overview", "/routines/overview/"):
+                try:
+                    from core import routines as agent_routines
+
+                    self._send(200, agent_routines.overview())
                 except Exception as e:
                     self._send(500, {"ok": False, "error": str(e)})
             elif path in ("/recurring", "/recurring/"):
@@ -1122,6 +1159,10 @@ def main():
                     stream = (self.headers.get("Accept", "") == "application/x-ndjson")
                     if not stream:
                         result = _handle_chat(payload)
+                        from core import usage_meter
+                        snap = usage_meter.snapshot()
+                        if isinstance(result, dict) and snap["total"] > 0:
+                            result = {**result, "usage": snap}
                         # bei write-Tool ohne Freigabe -> 200 mit pending-Flag
                         self._send(200, {"pending_confirmation": False, **result})
                         return
@@ -1132,8 +1173,14 @@ def main():
                     self.end_headers()
                     def send(obj):
                         from core.tool_loop import ClientCancelled
+                        from core import usage_meter
                         import errno as _errno
                         try:
+                            if isinstance(obj, dict) and obj.get("type") == "done":
+                                snap = usage_meter.snapshot()
+                                if snap["total"] > 0:
+                                    obj = dict(obj)
+                                    obj["usage"] = snap
                             line = (json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8")
                             self.wfile.write(line)
                             self.wfile.flush()

@@ -143,6 +143,24 @@ class DsmlParseTests(unittest.TestCase):
         self.assertEqual(args["pattern"], "Cloud-Denker|deepseek-v4-flash-0731")
         self.assertEqual(args["max_hits"], 50)
 
+    def test_xml_tool_call_tag(self):
+        raw = (
+            "<tool_calls>\n"
+            "<tool_call name=\"ChatDatei\">\n"
+            "<parameter name=\"title\">Betriebsanweisung: Leitern und Tritte</parameter>\n"
+            "<parameter name=\"format\">docx</parameter>\n"
+            "<parameter name=\"text\">1. Anwendungsbereich\nGilt für Leitern.\n</parameter>\n"
+            "</tool_call>\n"
+            "</tool_calls>\n"
+        )
+        r = tr.try_parse_tool_call(raw)
+        self.assertIsNotNone(r)
+        name, args = r
+        self.assertEqual(name, "ChatDatei")
+        self.assertEqual(args["format"], "docx")
+        self.assertIn("Gilt für Leitern.", args["text"])
+        self.assertIsNone(tr.try_parse_tool_call("Im Text steht kein Aufruf."))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 TZ = ZoneInfo("Europe/Berlin")
 STORE_PATH = os.path.expanduser("~/.glyph/tasks.json")
 STATUSES = {"new", "analysis", "needs_input", "ready_to_build", "building", "review", "done", "blocked"}
-HEADS = {"grok", "_code", "glyph-agent", "codex"}
+HEADS = {"grok", "_code", "codex", "_tick", "glyph-agent"}
 _ARTIFACT_MAX = 80_000
 
 

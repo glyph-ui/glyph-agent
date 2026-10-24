@@ -178,6 +178,7 @@ _SCRIPT_ALLOW = frozenset(
         "memory_hygiene.py",
         "session_cleanup_legacy.py",
         "wiki_hygiene.py",
+        "vault_inbox_sync.py",
     }
 )
 

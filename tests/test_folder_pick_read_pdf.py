@@ -431,6 +431,38 @@ class AskToReadBlockedTests(unittest.TestCase):
         self.assertFalse(tool_loop._is_ask_to_read(ANSWER))
         self.assertFalse(tool_loop._is_ask_to_read("Welche Dateien liegen im Eingang?"))
 
+    def test_read_pdf_ohne_text_faellt_auf_index_excerpt_zurueck(self):
+        """Meldung 2026-10-09: Scheel-Schrank-PDF lieferte nur den Dateinamen.
+
+        read_pdf ohne Textlayer → Excerpt aus dem Vektorindex nachziehen,
+        damit das Modell den Inhalt sieht statt den Treffer zu verwerfen.
+        """
+        from core import tool_loop, pdf_tools
+        import core.pdf_index as pdf_index
+
+        files = [{"path": "/V/a.pdf", "title": "a.pdf", "text": "", "score": 1.0}]
+        old_pdf = pdf_tools.read_pdf
+        old_exc = pdf_index.excerpt_for
+
+        def fake_pdf(path, max_chars=None):
+            return {"ok": False, "path": path, "content": "", "error": "kein Textlayer"}
+
+        def fake_excerpt(path, *a, **k):
+            return "INDEX-SNIPPET:" + str(path)
+
+        pdf_tools.read_pdf = fake_pdf
+        pdf_index.excerpt_for = fake_excerpt
+        try:
+            out = tool_loop._read_selected_pdfs(files, limit=1, query="sicherheitsschrank")
+        finally:
+            pdf_tools.read_pdf = old_pdf
+            pdf_index.excerpt_for = old_exc
+
+        self.assertEqual(len(out), 1)
+        self.assertIs(out[0][1].get("ok"), False)
+        self.assertEqual(files[0]["excerpt"], "INDEX-SNIPPET:/V/a.pdf")
+        self.assertEqual(files[0]["text"], "INDEX-SNIPPET:/V/a.pdf")
+
 
 class ReadPdfInternalFmtTests(unittest.TestCase):
     def test_readpdf_is_internal_source(self):

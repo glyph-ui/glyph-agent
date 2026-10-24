@@ -275,7 +275,8 @@ def run_swarm(
     def _search(query, count=4):
         if search_fn:
             return search_fn(query, count)
-        return web.web_search(query, count=count, source="both")
+        # Swarm verdichtet Treffer auf Snippets — kein Volltext-Fetch (attach_top=0).
+        return web.web_search(query, count=count, source="both", attach_top=0)
 
     def emit(event):
         if not on_event:

@@ -2,7 +2,7 @@
 
 Lokale Engine hinter dem Glyph-Profil **glyph-agent**: Vault-Gedächtnis, Recherche-Tools und Cloud-Antwort. Eigenes Domänenvokabular — getrennt von Glyph-UI.
 
-## Orient (für ^_Code / Agenten)
+## Orient (für ^_tick / Agenten)
 
 1. Diese Datei zuerst lesen — **nicht** blind ListDir/Grep über `core/`.
 2. Aufgabe → **Node** → nur deren Quellen. MODE entscheidet den Pfad (`agent` vs `code`).
@@ -15,13 +15,15 @@ Lokale Engine hinter dem Glyph-Profil **glyph-agent**: Vault-Gedächtnis, Recher
 | **HTTP** | `/chat`, `/health`, `/vault/find`, vaults/workspaces/recurring/tasks CRUD | `server.py` | alle Loops |
 | **Agent-Loop** | B+: VaultFind → Tools → Cloud-Denker. UI: `vault_search=false` = memory-wiki + offenes Web; Auswahl = Arbeits-Vault + Wiki | `core/tool_loop.py`, `core/agent.py`, `core/vault_preview.py`, `core/vault_scope.py` | retrieval, research, vault_tools |
 | **Vault-Schreiben** | Chat-Wachstum: CreateNote/ApplyEdit unter Themen/ + Wiki. Chat nie löschen/leeren. Job `td-wiki-hygiene` darf doppelt tote Wiki-Dateien in den 30-Tage-Korb. | `core/vault_write_policy.py`, `core/vault_tools.py`, `scripts/wiki_hygiene.py` | tool_loop, jobs |
-| **Code-Loop** | ^_Code: Read/Write/Grep/Shell; Freigabe Einmal/Auftrag/Task; **TaskFinish** schließt Glyph-Aufgabe (Artefakt + `done`, kein Workspace-Grant) | `core/code_loop.py`, `core/code_tools.py`, `core/tasks.py` | `workspaces_registry`, Grant-Store, `~/.glyph/tasks.json` |
-| **Tools-Registry** | Tool-Namen, Schemas, Dispatch | `core/tool_registry.py` | tool_loop / code_loop |
+| **Code-Loop** | ^_tick (Nachfolger ^_Code): Read/Write/Grep/Shell; Freigabe Einmal/Auftrag/Task; **TaskFinish** schließt Glyph-Aufgabe (Artefakt + `done`, kein Workspace-Grant) | `core/code_loop.py`, `core/code_tools.py`, `core/tasks.py` | `workspaces_registry`, Grant-Store, `~/.glyph/tasks.json` |
+| **Routine-Ordner** | ^_tick: `Daily/` · `Inbox/` · `Blocked/` · `Done/` · `Log/` unter `~/ObsidianVaults/memory-wiki/Routinen/`; Anlegen/Lesen/Verschieben/Protokoll über Routine-Tools, Plan & Aktivität über `RoutineOverview`/`RoutinePlan`/`RoutineSet`/`RoutineRun` (SoT `jobs/recurring.json` + `~/.glyph/tasks.json`); HTTP `GET /routines/overview` für die UI | `core/routines.py`, `core/tool_registry.py` (CODE_TOOLS) | Vault `memory-wiki`, `recurring`, `tasks` |
+| **Tools-Registry** | Tool-Namen, Schemas, Dispatch. **ChatDatei**: PDF/Word nur als Chat-Link, kein Vault, kein Plattenrest | `core/tool_registry.py`, `core/chat_file.py` | tool_loop / code_loop |
 | **Bind-Store** | Persistenz + Kern-PATCH für Vaults+Workspaces; `heads` je Kopf (grok/agent/code) | `core/bind_store.py` | vaults_registry, workspaces_registry |
 | **Vaults** | `~/.glyph/vaults.json`, Pins, Privat-Block | `core/vaults_registry.py` | Index, VaultFind |
 | **Workspaces** | `~/.glyph/workspaces.json` r/r+w/🔒 | `core/workspaces_registry.py` | code_tools Pfadchecks |
 | **Retrieval** | Embeddings `bge-m3` + Keyword hybrid | `core/retrieval.py` | Ollama lokal |
 | **Research** | Exa grob, TinyFish fein | `core/research.py`, `core/web.py` | tool_loop |
+| **Suchbrücke** | Rückfrage + Verlauf → 1–2 eigenständige Suchbegriffe, **bevor** Exa/TinyFish sie sehen. Kein Call ohne Verlauf/Kontextbezug, keiner lokal; Regel-Fallback bei Fehler. Stufe `SearchBridge` (UI: `Query`) | `core/query_bridge.py`, `core/tool_loop.py` (`_run_web_precheck`, `_bridged_web_args`) | history, llm, web |
 | **Swarm** | Composer-Aktion: Planer → Websuche → Synthese. Einstieg `POST /chat` mit `swarm: true` (`run_swarm`). Köpfe °_Agent / ^_Code. | `core/swarm.py` | HTTP `/chat`, Glyph-Composer |
 | **Recurring/Jobs** | Plan, Catch-up, HSEQ-Seeds, Nightly-Scripts (`memory_hygiene.py`, `wiki_hygiene.py`, `session_cleanup_legacy.py`) | `core/recurring.py`, `jobs/`, `scripts/` | `jobs/recurring.json` |
 | **Aufgaben** | Manuelle Übergabe zwischen Köpfen. SoT `~/.glyph/tasks.json`. Zielkopf optional, nie die ganze Session. | `core/tasks.py` | HTTP `/tasks`, Glyph Plan-Tab |
@@ -33,7 +35,7 @@ Lokale Engine hinter dem Glyph-Profil **glyph-agent**: Vault-Gedächtnis, Recher
 
 **Crux:**  
 - Workspace-Recht `r+w` = beschreibbar, nicht Auto-Write. Apply braucht **Freigabe** (Einmal / Auftrag / Task) plus Grant-Store. Elevated und hart-deny gelten weiter.  
-- °_Agent default **kein Shell**. Shell nur `MODE=code`.  
+- °_Agent default **kein Shell**. Shell nur `MODE=code|tick` (^_tick).  
 - Embeddings **nur** lokal `bge-m3` — nie Cloud-Embedding.
 
 ## Language
@@ -57,8 +59,8 @@ Ein nach außen sichtbares Finde-Werkzeug; intern hybrid Embedding + Keyword üb
 _Avoid_: VaultRecall, VaultSearch (Aliase, kein neuer Begriff)
 
 **Ordner-Suche**:
-Manueller Arbeits-Vault-Zugriff aus der UI (°_Agent-Apfel). `POST /vault/find` liefert Treffer ohne LLM (Arbeits-Vault; leer → KomNet, sonst DGUV). `/chat` mit `vault_search=false`: memory-wiki + TinyFish/Exa + offenes Web, kein Arbeits-Vault, kein KomNet/DGUV-Pfad. `vault_selected`: gewählte Arbeits-Vault-/KomNet-/DGUV-Treffer plus memory-wiki. Ohne diese Felder bleibt B+ (Jobs). TinyFish und Exa immer.
-_Avoid_: Arbeits-Vault ohne Apfel; KomNet/DGUV ohne Apfel; Wiki hinter den Apfel; HTML-Scrape der Zielseite; offene Websuche als Apfel-Fallback
+Manueller Arbeits-Vault-Zugriff aus der UI (Modus Vault bei °_Agent). `POST /vault/find` liefert Treffer ohne LLM (Arbeits-Vault; leer → KomNet, sonst DGUV). `/chat` mit `vault_search=false`: memory-wiki + TinyFish/Exa + offenes Web, kein Arbeits-Vault. KomNet und DGUV sind dabei normale Webtreffer, kein Verbot. `vault_selected`: gewählte Arbeits-Vault-/KomNet-/DGUV-Treffer plus memory-wiki. Ohne diese Felder bleibt B+ (Jobs). TinyFish und Exa immer.
+_Avoid_: Arbeits-Vault ohne Apfel; Wiki hinter den Apfel; HTML-Scrape der Zielseite; offene Websuche als Apfel-Fallback
 
 **OpenRouter (Technik)**:
 Env- und Provider-IDs des Router-Hops (`OPENROUTER_URL`, `OPENROUTER_API_KEY`, Modus `openrouter`). **Kein** Glyph-UI-Profil. UI-Name: **Router**.
@@ -119,14 +121,38 @@ _Avoid_: git commit in der Whitelist als stilles Allow
 - `vault_search=false` → kein VaultFind/ListVaultDir-Precheck, Tools gesperrt.
 - `vault_selected` → nur gewählte Treffer als Kontext, kein neuer VaultFind. `kind: web` = KomNet/DGUV-URL, kein ListVaultDir. Datei-Tap und Ordner-Pick: ReadPdf der 1–2 namenspassenden PDFs im selben Turn (nicht Listenplatz). Nie den Nutzer fragen, welche Datei zu öffnen.
 - `/vault/find` ohne Vault-Treffer: Exa+TinyFish auf `komnet.nrw.de`; leer → dieselben auf `dguv.de`. Kein HTML-Scrape. Nicht Jobs/B+.
-- WebSearch (Tool + Precheck + Swarm): Default `source=both` — Exa und TinyFish parallel, URLs mergen. ExtractUrl/FetchUrl bleibt TinyFish für konkrete Seiten.
+- WebSearch (Tool + Precheck + Swarm): Default `source=both` — Exa und TinyFish parallel, URLs mergen. Ohne Domainfilter: offene Suche; Amtssuche (Gesetz, Rechtsprechung, Behörden, KomNet, DGUV) **nur bei Rechts-/HSEQ-Fragen** (`research.is_legal_query`). Sortierung nach Relevanz zur Anfrage, Stufe bricht den Gleichstand; Ratgeber ans Ende, nichts verworfen. `include_domains` bleibt harter Filter. ExtractUrl/FetchUrl bleibt TinyFish für konkrete Seiten.
 - `/chat` ohne Flag: B+ unverändert (HSEQ-Jobs, Scripts).
 - Kein ADR nötig — CONTEXT reicht (Q9=C).
+
+### Settled decisions (Websuche-Relevanz 2026-10-09)
+
+Anlass: „test“ als Suchanfrage lieferte Testverordnung/DGUV-Testseiten — die Amtssuche lief für **jede** Anfrage mit und die Stufen-Sortierung schob amtliche Treffer ohne Bezug nach vorn.
+
+- **Relevanz vor Quellenrang:** `source_rank.relevance(query, row)` (Wortstamm-Abgleich Query ↔ Titel/Snippet/URL, Titel doppelt, eigenes Wort > Kompositum) sortiert die Treffer; `source_rank.band` (Stufe) entscheidet nur bei Gleichstand (`rank_key`). Treffer ohne Bezug (relevance 0) bleiben erhalten, landen aber hinter jedem passenden Treffer.
+- **Amtssuche nur bei Rechts-/HSEQ-Fragen:** `research.is_legal_query` (Signale: Gesetz/Verordnung/Vorschrift/Prüfung/DGUV/DIN …). „test test test“ → nur offene Suche.
+- **Volltext statt Snippets:** die `attach_top=2` relevantesten Treffer bekommen `text` (TinyFish Fetch, max. 8.000 Zeichen, 12 s Timeout, parallel). Swarm setzt `attach_top=0` (verdichtet auf Snippets). Fetch-Ausfall lässt die Suche unverändert stehen.
+- Prompt (`research.policy_prompt_snippet`): „Mindestens Stufe 1/2 zitieren“ gilt **nur bei Rechtsfragen**; bei Sachfragen zählt der Inhalt. Nicht passende Treffer nicht aufzählen.
+- Tests: `tests/test_source_rank.py` (Relevanz, Amtssuche-Gating, Top-2-Volltext).
+
+### Settled decisions (Suchbrücke 2026-10-11)
+
+Anlass: Die Nachfrage „wie oft muss ich das tun?" ging **wörtlich** an Exa/TinyFish (Treffer: Winterdienst, Postzustellung). Der Web-Precheck kannte nur die aktuelle Nachricht; der Verlauf lag vor, wurde aber nie an die Suche übergeben. `_derive_web_query` war rein regelbasiert.
+
+- **Brücke vor der Suche:** `core/query_bridge.build_plan(user_message, prior_history)` gibt `{standalone, queries, terms, source}`. `source=passthrough` = unverändert wörtlich (erste Frage, eigenständige Frage), `llm` = Brücken-Call, `heuristic` = Regel-Fallback.
+- **Wann ein Call läuft** (`needs_context`): nur mit Verlauf UND Kontextbezug — ≤3 Wörter, eindeutiges Verweiswort (`das`, `es`, `davon`, …) oder Rückfrage-Formulierung ohne eigenen Fachbegriff. Ein Norm-Kürzel oder langer Komposit-Begriff (`TRGS 600`, `Gefährdungsbeurteilung`) gilt als eigenständig → kein Call. **Erste Frage ohne Verlauf bleibt unverändert.**
+- **Modell:** aktives Agent-Modell (heute Haiku 5.5), `SEARCH_BRIDGE_MODEL` kann es überschreiben. `temperature=0`, hartes Zeitlimit `SEARCH_BRIDGE_TIMEOUT` (Default 8 s) über `llm.chat(..., timeout=)`.
+- **Lokaler Kopf:** kein Brücken-Call (Prefill ~90 s) — es bleibt beim Regel-Fallback.
+- **Zwei Suchläufe:** bis zu `SEARCH_BRIDGE_QUERIES` (Default 2) Anfragen an Exa/TinyFish, Treffer reihum gemischt und URL-dedupliziert (`_merge_web_hits`, Kontext-Cap `WEB_CTX_HITS`, Default 7). Steps: `SearchBridge` → `WebSearch` (×n) → `LLM` → `answer`.
+- **Ein Plan pro Turn:** `web_plan_holder` teilt den Plan zwischen Precheck und Modell-Runde; eine vom Modell gestellte Rückfrage wird ebenfalls durch `_bridged_web_args` geleitet (kein zweiter Brücken-Call).
+- **Datenschutz:** an das Modell gehen nur Verlaufstext + Rückfrage (derselbe Hop, der ohnehin antwortet); an Exa/TinyFish nur die fertige Suchanfrage — nie Vault-Inhalt.
+- **Aus-Schalter:** `GLYPH_SEARCH_BRIDGE=0` (dann wieder wörtlich wie vorher).
+- Tests: `tests/test_query_bridge.py`, `tests/test_web_bridge_wiring.py`; UI-Label `SearchBridge → Query` in `glyph-ui/server/stepBanner.mjs` + `glyph-agent-acp.mjs`.
 
 ## Settled decisions (C′ 2026-08-07)
 
 - **glyph-agent Default** bleibt **Vault-only** (kein Shell, kein allgemeines Repo-Schreiben).
-- **`MODE=code`** (per Request `mode: "code"`): ^_Code-Pfad — Tools `ListDir` / `ReadFile` / `Grep` / `SearchReplace` / `WriteFile` / `RunCommand`, Denker `CODE_OPENROUTER_MODEL` (Default `deepseek-v4-flash-vision-exp`).
+- **`MODE=code|tick`** (per Request `mode: "code"|"tick"`): ^_tick-Pfad (`tick` = Code-Fähigkeiten + Routine-Kopf, eigene Rolle `tick_role()` und Routine-Tools) — Tools `ListDir` / `ReadFile` / `Grep` / `SearchReplace` / `WriteFile` / `RunCommand`, Denker `CODE_OPENROUTER_MODEL` (Default `deepseek-v4-flash-vision-exp`).
 - **Workspaces-SoT:** `~/.glyph/workspaces.json` (Modes `r` / `rw` / `private`); Registry `core/workspaces_registry.py`. Fallback `CODE_WORKSPACE_ROOTS` nur wenn Store fehlt oder `CODE_WORKSPACES_USE_REGISTRY=false`; geladene leere/disabled Registry ist `[]`.
 - Write/SearchReplace unter **`r+w` ohne Popup**. Whitelist-Shell unter `r+w` ohne Popup. **Aufgehoben 2026-08-22** (Freigabe Einmal/Auftrag/Task).
 - **Elevated** braucht Glyph-Popup (`pending_confirmation` + `resume_token`): `git push|pull|fetch`, Compound, `npm run service:*`. Kein Session-Always für elevated. **Erweitert 2026-08-22:** kein Session-Always für Schreiben/Shell überhaupt.
@@ -240,3 +266,32 @@ _Avoid_: git commit in der Whitelist als stilles Allow
 - **°_Agent**: Wiki-Aliase `WikiSearch`→VaultFind, `WikiGet`→ReadNote, `WikiApply`→ApplyEdit; `WikiStatus` liest agent-digest (read-only).
 - `BrowseUrl` = TinyFish Extract mit Summary-Goal; `ReadPdf` liest Vault-PDFs; PDF-Ingest = ReadPdf → Claims → CreateNote/ApplyEdit Allowlist (nie PDF-Datei schreiben); Mail via himalaya; `MessageSend` via openclaw (write+confirm).
 - Kein Shell im Agent-Modus. Externe CLIs graceful degrade.
+
+## Settled decisions (Digitalisierungs-Kette 2026-10-09)
+
+Anlass: Nutzer scannt Papier und vermutet unvollständige Indexierung. Messung (84.832 Seiten, `pdftotext` je Seite): 4,4 % Seiten ohne Textebene, **19,4 % der PDFs** mit Scan-Anteil — überwiegend Betriebsanweisungen, Auditberichte, Folien.
+
+- **Seitenweise OCR-Kette** (`core/pdf_tools.extract_pdf_pages`): Textlayer je Seite, Seiten-Gate (< 40 Zeichen), OCR **nur** für Scan-Seiten, Merge. Gemischte PDFs (395 Stück) verloren vorher ihre Scan-Seiten, weil das Gate dokumentsweit saß.
+- **OCR-Backends** (`ocr_backend()` / Env `OCR_BACKEND=auto|vision|lighton|off`): `lighton` = **LightOnOCR-3-0.8B via MLX**, lokal als LaunchAgent `com.lxndrhbrt.lighton-ocr` (`scripts/lighton_server.py`, Port 8790, OpenAI-kompatibel). Default-URL `http://127.0.0.1:8790/v1` (ohne `.env`). Timeout 180s, Client-Lock (MLX seriell). LightOn leer/Timeout → Vision-Fallback pro Seite. `build_pdf_index` cappt `--workers` bei lighton auf 1. `vision` = macOS-Helfer `ocr_pdf.swift` (Seitenauswahl als 4. Argument). Auto: lighton wenn Endpunkt offen, sonst vision.
+- **Index-Formate:** PDF + **Bilder** (JPG/PNG/TIFF/HEIC, `core/image_ocr.py`, sips-Normalisierung) + **docx/xlsx** (`core/office_text.py`, ZIP+XML ohne pip-Abhängigkeit). Alle landen im PDF-Vektorindex (`build_pdf_index.py`, Schalter `--no-images`/`--no-office`).
+- **Index-Korrekturen:** keine 40k-Zeichen-Kappe mehr beim Ingest (dicke Regelwerke waren beschnitten); `files`-Tabelle hält `pages`/`ocr_pages`; `--reocr` (unterbrechbar: Dateien mit Engine `lighton` bleiben aus), `--filelist`.
+- **Coverage-Audit** (`scripts/pdf_coverage.py`): fehlend/stale/rescan je PDF, md-Lücken; `--write-filelist` speist `--filelist`.
+- Bestand 2026-10-09: 2.938 PDFs → 2.396 ok, **541 rescan**, 1 missing; md 340/344. Backlog-Neuläufe: `build_pdf_index.py --filelist <liste> --reocr`.
+
+### Auswahl-Kopie aus iCloud (2026-10-10/11)
+
+- Nutzerentscheidung: 01 alle · 02 gelistet (DSGVO) · 03 gelistet · 04 alle · 05 ohne persönliche Unterlagen · 06 ohne Begehungsberichte, BERATER-Namen bereinigt, Unterweisungen DSGVO · **Weiterbildung als eigene Kategorie** (ohne Gruppenarbeiten/Lernthemen/Termine/Übersicht Themen/E-Mail Nachverfolgung/Prüfungsfragen) · top-Vorlagen nein.
+- **Kopie strukturtreu** nach `Arbeitssicherheit/<Quellpfad>` (macOS NFD-Fallstrick: Vergleiche immer über `unicodedata.normalize('NFC', …)`).
+- **DSGVO-Redaktion an der Kopie** (`core/dsgvo.py`): Anrede+Namen (auch über XML-Runs verteilt) und Firmentoken (BERATERgroup → Beratung) in docx/xlsx/pptx/pptm; Originale in iCloud unangetastet. `.ppt` (Binär) und PDFs nicht in-file redigierbar → **Index-Redaktion** (`build_pdf_index._redact_chunks`) hält den Token aus Suche/Treffer, Inhalte bleiben.
+- **BERATER.group-Ordner** kopiert als `Präsi/Unterweisungen extern/`, Präfixe aus Dateinamen entfernt.
+- `office_text.read_pptx` + OFFICE_EXTS um `.pptx/.pptm` erweitert (Folie-für-Folie).
+- Bekannt: `06/Präsi/Führen von Fahrzeugen.pptx` korrupt (2 Versuche, übersprungen); `01/…/Statistik_Unternehmen.pptx` und 2 Bender-docx ohne Text (status empty) — Kandidaten für Bild-OCR nachträglich.
+
+## Settled decisions (Vault-Inbox 2026-10-10)
+
+OCR füllt den **Index** (Suche). Der **Vault** ist das Hirn: Dateien müssen als Kopie + Wikilink dort liegen.
+
+- Job `td-inbox-sync` (`scripts/vault_inbox_sync.py`, täglich 07:00): Quellen iCloud `Documents/Scanordner`, `~/Downloads`, iCloud `Documents/01 Beruf`. Nur kopieren, nie löschen.
+- Gemischte Drops: Hash-Abgleich gegen ASI+Privat, dann Klassifikation `hseq` → ASI + `Themen/00 Eingang-Dateien.md`; `privat` → Privat-Vault `00 Eingang/` (kein Index); `intern` (Bewerbung/Zeugnisse/Stunden/Kunden/Datenbanken) → `ASI/Beruf-intern/` (Index-Skip); Passwörter-Ordner → skip.
+- Unbekannt (Scan/Downloads) → Privat, nicht in Glyph-Suche.
+- Index neuer HSEQ-Kopien: Nightly `pdf-index-nightly` (inkrementell). Kein Extra-Status-Log.

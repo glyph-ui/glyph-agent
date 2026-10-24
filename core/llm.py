@@ -14,6 +14,7 @@ Die tatsächliche Provider-Implementierung liegt in core/providers/*.
 Diese Datei darf KEINE provider-spezifische Logik enthalten.
 """
 import contextvars
+import inspect
 from contextlib import contextmanager
 
 from .providers import factory
@@ -104,9 +105,27 @@ def thinker_step_detail(kind="agent", model=None):
     return f"{prefix} denkt ({short_model_label(used)})"
 
 
-def chat(system, user, temperature=0.3, num_ctx=8192, kind="agent"):
-    """Chat-Aufruf an den aktiven Provider. Liefert Antworttext (str)."""
-    return get_provider(kind).chat(system, user, temperature, num_ctx)
+def _accepts_timeout(provider):
+    """True, wenn der Provider ein `timeout`-Argument kennt (alle außer mlx)."""
+    try:
+        params = inspect.signature(provider.chat).parameters
+    except (TypeError, ValueError):
+        return False
+    return "timeout" in params
+
+
+def chat(system, user, temperature=0.3, num_ctx=8192, kind="agent", timeout=None):
+    """Chat-Aufruf an den aktiven Provider. Liefert Antworttext (str).
+
+    timeout: optionales Wall-Clock-Limit in Sekunden (kurze Hilfs-Calls wie die
+    Suchbrücke). Provider ohne `timeout`-Argument werden unverändert aufgerufen.
+    """
+    provider = get_provider(kind)
+    if timeout is None:
+        return provider.chat(system, user, temperature, num_ctx)
+    if _accepts_timeout(provider):
+        return provider.chat(system, user, temperature, num_ctx, timeout=timeout)
+    return provider.chat(system, user, temperature, num_ctx)
 
 
 def generate(prompt, temperature=0.3, num_ctx=8192, kind="agent"):

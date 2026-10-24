@@ -279,9 +279,37 @@ TOOLS = [
         "args": {"path": "str, relativer oder vault-relativer .md-Pfad"},
         "write": False,
     },
+    {
+        "name": "ChatDatei",
+        "description": (
+            "Erzeugt auf Wunsch eine PDF- oder Word-Datei nur für den Chat. "
+            "format: pdf oder docx. title: Überschrift des Links. "
+            "text: vollständiger Inhalt. Schreibt nicht in den Vault und nicht auf die Platte. "
+            "Betriebsanweisung: das Leerformular nur lesen und die Füllung als Chat-Datei ausgeben. "
+            "Abschnitte "
+            "1 Anwendungsbereich, 2 Gefahren für Mensch und Umwelt, "
+            "3 Schutzmaßnahmen und Verhaltensregeln, "
+            "4 Verhalten bei Störungen und im Gefahrfall, "
+            "5 Verhalten bei Unfällen – Erste Hilfe, "
+            "6 Instandhaltung, Entsorgung. "
+            "Firma, Nummer, Datum und Unterschrift leer. "
+            "Inhalt als kurze Stichpunkte, eine Zeile je Punkt. "
+            "Zwischenüberschriften wie Auswahl, Aufstellen, Benutzen sind erlaubt. "
+            "Kein Fließtext, kein Aufsatz. Keine Vorstellung. "
+            "Nur aufrufen, wenn der Nutzer eine Betriebsanweisung erstellen will. "
+            "Sonst nicht aufrufen, die Suche bleibt. "
+            "Den Inhalt nicht noch einmal als Chat-Text wiederholen."
+        ),
+        "args": {
+            "title": "str, Überschrift",
+            "text": "str, vollständiger Dateiinhalt",
+            "format": "pdf oder docx",
+        },
+        "write": False,
+    },
 ]
 
-# CODE-Tools (^_Code / MODE=code) — Workspace-Roots, kein VaultFind.
+# CODE-Tools (^_tick / MODE=code|tick) — Workspace-Roots, kein VaultFind.
 CODE_TOOLS = [
     {
         "name": "ListDir",
@@ -425,6 +453,114 @@ CODE_TOOLS = [
         },
         "write": True,
     },
+    # --- ^_tick: Job-Ordner + Plan & Aktivität ---
+    {
+        "name": "RoutineOverview",
+        "description": (
+            "Ein Blick auf die ganze Routine-Lage: Zähler (To-dos aktiv/pausiert/fällig, "
+            "offene Glyph-Aufgaben, Job-Ordner je Box), Dateien in Daily/Inbox/Blocked/Done "
+            "und die letzten Läufe. Für Fragen wie 'wie viele offene Aufgaben?'. Read-only."
+        ),
+        "args": {},
+        "write": False,
+    },
+    {
+        "name": "RoutineJobs",
+        "description": (
+            "Listet die Job-Dateien im Routine-Ordner (Daily/, Inbox/, Blocked/) "
+            "mit Datum, Größe und Kopfzeile. Daily zuerst, dann Inbox. "
+            "Quelle der täglichen Aufträge — read-only."
+        ),
+        "args": {
+            "box": "str optional: Daily | Inbox | Blocked (leer = alle + Done-Zähler)",
+            "include_done": "bool optional, Done/ mitlisten",
+        },
+        "write": False,
+    },
+    {
+        "name": "RoutineRead",
+        "description": "Liest eine Job-Datei vollständig (Name aus RoutineJobs). Read-only.",
+        "args": {
+            "name": "str, Dateiname (Präfix genügt, wenn eindeutig)",
+            "box": "str optional: Daily | Inbox | Blocked",
+        },
+        "write": False,
+    },
+    {
+        "name": "RoutineJobWrite",
+        "description": (
+            "Legt eine NEUE Job-Datei in Daily/ oder Inbox/ an (Auftragsformat: "
+            "JOB/Ziel/Quelle/Zielort/Schritte/Ausschluss/Erledigt-wenn). "
+            "Nie überschreiben — existiert die Datei, bleibt sie unverändert. Braucht Freigabe."
+        ),
+        "args": {
+            "box": "str: Daily | Inbox",
+            "name": "str, Dateiname (ohne .md)",
+            "body": "str, vollständiger Job-Text",
+        },
+        "write": True,
+    },
+    {
+        "name": "RoutineMove",
+        "description": (
+            "Verschiebt einen Job (typisch Inbox → Done nach Erledigung, Inbox → Blocked). "
+            "Done bekommt das Datum im Dateinamen, Blocked genau eine Frage an den Dateianfang. "
+            "Kopie zuerst; Kollision lässt alles unverändert."
+        ),
+        "args": {
+            "name": "str, Dateiname",
+            "to": "str: Done | Blocked | Daily | Inbox",
+            "question": "str, nur für Blocked: genau eine konkrete Frage",
+        },
+        "write": False,
+    },
+    {
+        "name": "RoutineLog",
+        "description": (
+            "Hängt Zeilen an das Laufprotokoll Log/YYYY-MM-DD_HHMM.md (append-only): "
+            "pro Job Status (erledigt/teilweise/blockiert), betroffene Dateien, Auffälligkeiten."
+        ),
+        "args": {"lines": "list[str] oder str"},
+        "write": False,
+    },
+    {
+        "name": "RoutinePlan",
+        "description": (
+            "Zeigt Plan & Aktivität: wiederkehrende To-dos (id, Zeitplan, pausiert, letzter Lauf) "
+            "und offene Glyph-Aufgaben. Read-only."
+        ),
+        "args": {"include_done_tasks": "bool optional"},
+        "write": False,
+    },
+    {
+        "name": "RoutineSet",
+        "description": (
+            "Legt ein wiederkehrendes To-do an (id leer) oder ändert es (id gesetzt): "
+            "Zeitplan, Prompt, Fertig-Kriterium, allow_write, pausiert. "
+            "Erscheint in Plan & Aktivität. Kein Löschen. Braucht Freigabe."
+        ),
+        "args": {
+            "id": "str optional, leere id = neu anlegen",
+            "title": "str",
+            "prompt": "str, was ohne Rückfragen zu tun ist (absolute Pfade)",
+            "pass": "str, eine prüfbare Fertig-Zeile (Pflicht bei neu)",
+            "schedule_kind": "str: daily | weekly | monthly",
+            "schedule_time": "str HH:MM",
+            "weekday": "int optional 0=Mo … 6=So (weekly)",
+            "paused": "bool optional",
+            "allow_write": "bool optional",
+        },
+        "write": True,
+    },
+    {
+        "name": "RoutineRun",
+        "description": (
+            "Löst ein wiederkehrendes To-do jetzt aus (wie Kalender → Ausführen). "
+            "Läuft synchron im Agent-Loop. Braucht Freigabe."
+        ),
+        "args": {"id": "str, To-do-Id", "force": "bool optional, Default true"},
+        "write": True,
+    },
 ]
 
 TOOL_MAP = {t["name"]: t for t in TOOLS}
@@ -434,14 +570,14 @@ CODE_TOOL_MAP = {t["name"]: t for t in CODE_TOOLS}
 def tools_for_mode(mode="agent"):
     """Tool-Liste je Betriebsart."""
     m = (mode or "agent").lower()
-    if m == "code":
+    if m in ("code", "tick"):
         return CODE_TOOLS
     return TOOLS
 
 
 def tool_map(mode="agent"):
     m = (mode or "agent").lower()
-    if m == "code":
+    if m in ("code", "tick"):
         return CODE_TOOL_MAP
     return TOOL_MAP
 
@@ -553,6 +689,46 @@ def _parse_dsml_tool_call(text):
     return (name, args)
 
 
+def _known_tool_names():
+    known = set()
+    try:
+        from . import tool_registry as _self
+
+        known = set(_self.tool_map("agent")) | set(_self.tool_map("code"))
+    except Exception:
+        pass
+    return known
+
+
+def _parse_xml_tool_call(text):
+    """Erster <tool_call name="X"><parameter name="k">v</parameter>…</tool_call>."""
+    if not text or "<tool_call" not in text.lower():
+        return None
+    inv = re.search(
+        r"<tool_call\s+name=\"([^\"]+)\"\s*>(.*?)(?:</tool_call>|$)",
+        text,
+        re.DOTALL | re.IGNORECASE,
+    )
+    if not inv:
+        return None
+    name = (inv.group(1) or "").strip()
+    known = _known_tool_names()
+    if not name or (known and name not in known):
+        return None
+    body = inv.group(2) or ""
+    args = {}
+    for pm in re.finditer(
+        r"<parameter\s+name=\"([^\"]+)\"\s*>(.*?)</parameter>",
+        body,
+        re.DOTALL | re.IGNORECASE,
+    ):
+        key = (pm.group(1) or "").strip()
+        if not key:
+            continue
+        args[key] = _coerce_dsml_value(pm.group(2), None)
+    return (name, args)
+
+
 def _parse_plain_invoke_tool_call(text):
     """Erster <invoke name="X">…</invoke>-Block OHNE DSML-Mark (ASCII-Leak).
 
@@ -564,13 +740,7 @@ def _parse_plain_invoke_tool_call(text):
         return None
     # Nur bekannte Tool-Namen akzeptieren (verhindert False Positives, wenn das
     # Modell über DSML/Invoke REDET statt es zu nutzen).
-    known = set()
-    try:
-        from . import tool_registry as _self
-
-        known = set(_self.tool_map("agent")) | set(_self.tool_map("code"))
-    except Exception:
-        pass
+    known = _known_tool_names()
     inv = re.search(
         r"<invoke\s+name=\"([^\"]+)\"\s*>(.*?)(?:</invoke>|$)",
         text,
@@ -617,6 +787,12 @@ def try_parse_tool_call(text):
     if plain is not None:
         return plain
 
+    # Grok schreibt <tool_call name="ChatDatei"><parameter name="text">…</parameter>
+    # als Antworttext. Das ist ein Aufruf, kein Chat.
+    tagged = _parse_xml_tool_call(text)
+    if tagged is not None:
+        return tagged
+
     s = text.strip()
     # Markdown-Codeblock entfernen, falls die ganze Antwort einer ist
     cm = re.search(r"```(?:json)?\s*(.*?)\s*```", s, re.DOTALL)
@@ -637,11 +813,53 @@ def try_parse_tool_call(text):
             idx += 1
             continue
         if isinstance(obj, dict) and "tool" in obj:
-            name = str(obj.get("tool"))
+            name = str(obj.get("tool") or "")
             args = obj.get("args") or {}
+            if not isinstance(args, dict):
+                args = {}
+            recovered = _recover_chatdatei(name, s)
+            if recovered:
+                return recovered
             return (name, args)
+        fname = obj.get("name")
+        if isinstance(fname, str) and ("arguments" in obj or "args" in obj):
+            name = fname.strip()
+            raw_args = obj.get("arguments") if "arguments" in obj else obj.get("args")
+            args = raw_args if isinstance(raw_args, dict) else {}
+            if isinstance(raw_args, str) and raw_args.strip():
+                try:
+                    parsed_args = json.loads(raw_args)
+                except json.JSONDecodeError:
+                    parsed_args = None
+                if isinstance(parsed_args, dict):
+                    args = parsed_args
+            recovered = _recover_chatdatei(name, s)
+            if recovered:
+                return recovered
+            if name:
+                return (name, args)
         idx = end
     return None
+
+
+def _recover_chatdatei(name, full):
+    """tool=\"ChatDatei(title:\\\"…\\\")\" ist der Aufruf, kein Werkzeugname."""
+    low = (name or "").lower()
+    if "chatdatei" not in low or name == "ChatDatei":
+        return None
+    from . import chat_file
+
+    narr = chat_file.narrated_call(name) or chat_file.narrated_call(full or "")
+    if not narr:
+        return None
+    text = str(narr.get("text") or narr.get("content") or "").strip()
+    if not text:
+        return None
+    return ("ChatDatei", {
+        "title": narr.get("title") or "",
+        "text": text,
+        "format": narr.get("format") or "docx",
+    })
 
 
 def _name_words(name):
@@ -719,7 +937,10 @@ def execute(tool_name, args, confirm=None, mode="agent", allow_elevated=False):
                     "error": "Schreib-Vorgang vom Nutzer abgebrochen."}
 
     try:
-        if mode == "code":
+        if tool_name == "ChatDatei":
+            from . import chat_file
+            out = chat_file.run(args or {})
+        elif mode in ("code", "tick"):
             out = _execute_code(tool_name, args or {}, allow_elevated=allow_elevated)
         else:
             out = _execute_agent(tool_name, args or {})
@@ -933,4 +1154,92 @@ def _execute_code(tool_name, args, allow_elevated=False):
                 "error": inner.get("error") or "TaskFinish fehlgeschlagen",
             }
         return {"ok": True, "result": inner}
+    # --- ^_tick: Job-Ordner + Plan & Aktivität ---
+    if tool_name == "RoutineOverview":
+        from . import routines
+        return {"ok": True, "result": routines.overview()}
+    if tool_name == "RoutineJobs":
+        from . import routines
+        box = args.get("box") or None
+        jobs = routines.list_jobs(box, include_done=bool(args.get("include_done")))
+        return {"ok": True, "result": {
+            "root": routines.root(),
+            "jobs": jobs,
+            "done": len(routines.list_jobs("Done")) if not box else None,
+        }}
+    if tool_name == "RoutineRead":
+        from . import routines
+        out = routines.read_job(args.get("name") or "", args.get("box") or None)
+        if not out.get("ok"):
+            return {"ok": False, "result": out, "error": out.get("error")}
+        return {"ok": True, "result": out}
+    if tool_name == "RoutineJobWrite":
+        from . import routines
+        out = routines.write_job(
+            args.get("box") or "Inbox",
+            args.get("name") or "",
+            args.get("content") or args.get("body") or "",
+        )
+        if not out.get("ok"):
+            return {"ok": False, "result": out, "error": out.get("error")}
+        return {"ok": True, "result": out}
+    if tool_name == "RoutineMove":
+        from . import routines
+        out = routines.move_job(
+            args.get("name") or "",
+            args.get("to") or "",
+            question=args.get("question") or "",
+        )
+        if not out.get("ok"):
+            return {"ok": False, "result": out, "error": out.get("error")}
+        return {"ok": True, "result": out}
+    if tool_name == "RoutineLog":
+        from . import routines
+        out = routines.append_log(args.get("lines"))
+        if not out.get("ok"):
+            return {"ok": False, "result": out, "error": out.get("error")}
+        return {"ok": True, "result": out}
+    if tool_name == "RoutinePlan":
+        from . import routines
+        return {"ok": True, "result": routines.plan_overview(
+            include_done_tasks=bool(args.get("include_done_tasks"))
+        )}
+    if tool_name == "RoutineSet":
+        from . import routines
+        item_id = str(args.get("id") or "").strip()
+        schedule_kind = str(args.get("schedule_kind") or "daily").strip().lower()
+        schedule = {"kind": schedule_kind, "time": str(args.get("schedule_time") or "07:00").strip()}
+        if schedule_kind == "weekly" and args.get("weekday") is not None:
+            schedule["weekday"] = int(args.get("weekday"))
+        if item_id:
+            patch = {k: v for k, v in {
+                "title": args.get("title"),
+                "prompt": args.get("prompt"),
+                "pass": args.get("pass"),
+                "schedule": schedule if (args.get("schedule_time") or args.get("weekday") is not None) else None,
+                "paused": args.get("paused"),
+                "allow_write": args.get("allow_write"),
+            }.items() if v is not None}
+            out = routines.update_routine(item_id, patch)
+        else:
+            out = routines.create_routine({
+                "title": args.get("title") or "",
+                "prompt": args.get("prompt") or "",
+                "pass": args.get("pass") or "",
+                "schedule": schedule,
+                "paused": bool(args.get("paused")),
+                "allow_write": bool(args.get("allow_write")),
+            })
+        if not out.get("ok"):
+            return {"ok": False, "result": out, "error": out.get("error")}
+        return {"ok": True, "result": out}
+    if tool_name == "RoutineRun":
+        from . import routines
+        out = routines.run_routine(
+            args.get("id") or "",
+            force=bool(args.get("force", True)),
+        )
+        if not out.get("ok"):
+            return {"ok": False, "result": out, "error": out.get("error") or "Lauf fehlgeschlagen"}
+        return {"ok": True, "result": out}
     return {"ok": False, "result": None, "error": f"Tool '{tool_name}' nicht implementiert."}

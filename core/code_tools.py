@@ -1221,6 +1221,37 @@ def permission_decision(tool_name, args):
             **extra,
         }
 
+    # --- ^_tick: Job-Ordner + Plan & Aktivität ---
+    # Eigener Ordnerzustand (Log, Verschieben, Lesen) läuft ohne Popup — er ist
+    # auf ROUTINES_ROOT begrenzt und append-only bzw. kollisionssicher.
+    if name in (
+        "RoutineJobs",
+        "RoutineRead",
+        "RoutineLog",
+        "RoutineMove",
+        "RoutinePlan",
+        "RoutineOverview",
+    ):
+        return {
+            "action": "allow",
+            "reason": "Routine-Ordner (^_tick)",
+            "elevated": False,
+            "risk": "",
+            "preview": preview_for_confirm(name, args),
+        }
+    # Neue Jobs, Plan-Änderungen und Läufe ändern die Auftragslage → Freigabe.
+    if name in ("RoutineJobWrite", "RoutineSet", "RoutineRun"):
+        return {
+            "action": "requires_grant",
+            "reason": "^_tick ändert Aufträge/Plan — Freigabe nötig",
+            "elevated": False,
+            "risk": "",
+            "preview": preview_for_confirm(name, args),
+            "hint": "Freigabe für Routine-Änderung",
+            "grant_scopes": ["once", "auftrag", "task"],
+            "suggested": {},
+        }
+
     # Unknown write-ish: confirm
     if name:
         return {
@@ -1271,6 +1302,28 @@ def preview_for_confirm(tool_name, args):
         content = str(args.get("content") or "")
         prev = content if len(content) <= 400 else content[:400] + "…"
         return f"VaultWrite → {path}\n{prev}"
+    if tool_name == "RoutineJobWrite":
+        body = str(args.get("body") or args.get("content") or "")
+        prev = body if len(body) <= 500 else body[:500] + "…"
+        return f"Neuer Job → {args.get('box')}/{args.get('name')}.md\n{prev}"
+    if tool_name == "RoutineMove":
+        extra = f"\nFrage: {args.get('question')}" if args.get("question") else ""
+        return f"Job verschieben → {args.get('to')}/: {args.get('name')}{extra}"
+    if tool_name == "RoutineLog":
+        lines = args.get("lines")
+        text = "\n".join(str(x) for x in lines) if isinstance(lines, (list, tuple)) else str(lines or "")
+        prev = text if len(text) <= 500 else text[:500] + "…"
+        return f"Laufprotokoll (append)\n{prev}"
+    if tool_name == "RoutineSet":
+        if args.get("id"):
+            return f"To-do ändern: {args.get('id')}\n{args}"
+        return (
+            f"Neues To-do: {args.get('title')}\n"
+            f"Zeitplan: {args.get('schedule_kind') or 'daily'} {args.get('schedule_time') or ''}\n"
+            f"Fertig: {args.get('pass')}"
+        )
+    if tool_name == "RoutineRun":
+        return f"To-do jetzt auslösen: {args.get('id')}"
     return f"{tool_name}: {args}"
 
 
