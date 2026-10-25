@@ -1423,7 +1423,7 @@ def read_note(path):
         from . import vault_tools
 
         _cfg.reload_vault_paths()
-        res = vault_tools.read_note(str(path or ""))
+        res = vault_tools.read_note(str(path or ""), head="code")
         return {"ok": True, "path": res.get("path"), "content": (res.get("content") or "")[:8000]}
     except Exception as e:
         return {"ok": False, "error": str(e)[:300]}
@@ -1438,7 +1438,7 @@ def wiki_get(lookup):
         from . import vault_tools
 
         _cfg.reload_vault_paths()
-        res = vault_tools.read_note(str(lookup or ""))
+        res = vault_tools.read_note(str(lookup or ""), head="code")
         return {"ok": True, "path": res.get("path"), "content": (res.get("content") or "")[:8000]}
     except Exception as e:
         return {"ok": False, "error": str(e)[:300]}
@@ -1537,7 +1537,7 @@ def vault_write(path, content):
         # Existiert die Notiz?
         exists = True
         try:
-            vault_tools.read_note(p)
+            vault_tools.read_note(p, head="code")
         except Exception:
             exists = False
         if exists:

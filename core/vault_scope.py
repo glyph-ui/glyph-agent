@@ -74,3 +74,43 @@ def path_in_roots(path, roots) -> bool:
     except OSError:
         pass
     return False
+
+
+def private_vault_names():
+    """Basenamen der Privat-Vaults (Registry mode=private), kleingeschrieben."""
+    try:
+        from . import vaults_registry as _vr
+
+        return {
+            os.path.basename(os.path.normpath(str(p))).lower()
+            for p in _vr.private_paths()
+            if p
+        }
+    except Exception:
+        return set()
+
+
+def is_private_hit(path, names=None) -> bool:
+    """Index-Treffer (/VaultName/rel oder Abs-Pfad) aus einem Privat-Vault?
+
+    Der Embedding-/PDF-Index kann Dokumente von Vaults enthalten, die erst
+    später auf privat gestellt wurden — deshalb Filter bei der Abfrage, nicht
+    nur beim Index-Aufbau. Abs-Pfade entscheidet der spezifischste Root
+    (Home ist privat, darunter liegende rw-Vaults nicht).
+    """
+    if not path:
+        return False
+    if names is None:
+        names = private_vault_names()
+    p = str(path).replace("\\", "/")
+    first = p.lstrip("/").split("/", 1)[0].lower()
+    if first in names:
+        return True
+    try:
+        if os.path.isabs(p) and os.path.exists(p):
+            from . import vaults_registry as _vr
+
+            return bool(_vr.is_private_path(p))
+    except Exception:
+        pass
+    return False

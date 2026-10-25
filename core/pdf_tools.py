@@ -426,6 +426,8 @@ def _resolve_pdf_path(path):
     rel = vault_tools._rel_to_root(resolved)
     if vault_tools._is_blocked(rel):
         raise PermissionError(f"Geschützter Ordner — PDF-Zugriff verweigert: {rel}")
+    if vault_tools._is_private(resolved):
+        raise PermissionError(f"Privat-Vault — PDF-Zugriff gesperrt (Schloss): {rel}")
     if not resolved.lower().endswith(".pdf"):
         raise ValueError(f"Kein PDF-Pfad: {path}")
     if not os.path.isfile(resolved):

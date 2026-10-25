@@ -516,10 +516,13 @@ def search(query, top_k=None, min_score=None, roots=None):
     final_k = top_k
     index = load_index()
     docs = index.get("docs", [])
-    if roots is not None:
-        from . import vault_scope as _vs
+    from . import vault_scope as _vs
 
+    if roots is not None:
         docs = [d for d in docs if _vs.path_in_roots(d.get("path"), roots)]
+    # Privat-Vaults nie — auch wenn der Index sie noch von früher enthält.
+    _priv_names = _vs.private_vault_names()
+    docs = [d for d in docs if not _vs.is_private_hit(d.get("path"), _priv_names)]
     q_emb = embed_text(query)
     if not q_emb:
         return {"status": "error", "query": query, "error": "Embedding fehlgeschlagen"}
@@ -529,6 +532,8 @@ def search(query, top_k=None, min_score=None, roots=None):
 
     # 1b) PDF-Chunks aus dem Vektorindex dazu (gleiche Pipeline, gleiche Schwelle)
     for r in _pdf_candidates(q_emb, candidate_k, roots):
+        if _vs.is_private_hit(r.get("path"), _priv_names):
+            continue
         scored.append((float(r.get("score") or 0.0), {
             "id": "pdf:" + str(r.get("path")) + ":" + str(r.get("section") or ""),
             "title": r.get("title"),
@@ -651,6 +656,11 @@ def vault_find(query, top_k=None, min_score=None,
         kw_pdf = _pi.keyword_search(query, limit=max(top_k * 5, 20), roots=roots) or []
     except Exception:
         kw_pdf = []
+    from . import vault_scope as _vs
+
+    _priv_names = _vs.private_vault_names()
+    kw_raw = [h for h in kw_raw if not _vs.is_private_hit(h.get("path"), _priv_names)]
+    kw_pdf = [h for h in kw_pdf if not _vs.is_private_hit(h.get("path"), _priv_names)]
     max_hits = max(
         [int(h.get("hits") or 0) for h in kw_raw]
         + [int(h.get("hits") or 0) for h in kw_pdf]

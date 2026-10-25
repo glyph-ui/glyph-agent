@@ -245,6 +245,20 @@ def _is_blocked(relpath):
     return False
 
 
+def _is_private(abs_path):
+    """True, wenn der Pfad in einem Privat-Vault liegt (Registry mode=private).
+
+    Gilt zusätzlich zu BLOCKED_DIRS: Privat-Vaults wie Peniel oder HSEQ Sync
+    stehen dort nicht — Inhalt UND Dateinamen gehen nie an das Modell.
+    """
+    try:
+        from . import vaults_registry as _vr
+
+        return bool(_vr.is_private_path(abs_path))
+    except Exception:
+        return False
+
+
 # --- Lesen / Suchen ---
 
 # Stopwörter für Token-Suche (DE/EN-Rauschen). Datum/Zahlen werden nie gefiltert.
@@ -985,6 +999,8 @@ def list_vault_dir(path="", limit=200, extensions=None):
             vroot_r = os.path.realpath(vroot)
             if not os.path.isdir(vroot_r):
                 continue
+            if _is_private(vroot_r):
+                continue
             vname = os.path.basename(vroot_r)
             try:
                 names = sorted(os.listdir(vroot_r), key=lambda s: s.lower())
@@ -1056,6 +1072,17 @@ def list_vault_dir(path="", limit=200, extensions=None):
             "truncated": False,
             "error": f"Geschützter Ordner — Zugriff verweigert: {rel}",
         }
+    if _is_private(resolved):
+        log.log("list_vault_dir_denied", path=rel, reason="private")
+        return {
+            "status": "error",
+            "path": rel,
+            "vault": None,
+            "entries": [],
+            "count": 0,
+            "truncated": False,
+            "error": f"Privat-Vault — Auflisten gesperrt (Schloss): {rel}",
+        }
     if not os.path.isdir(resolved):
         return {
             "status": "error",
@@ -1094,6 +1121,9 @@ def list_vault_dir(path="", limit=200, extensions=None):
         if _is_blocked(child_rel):
             continue
         is_dir = os.path.isdir(full)
+        # Privat-Vault, der unter einem offenen Ordner liegt: nicht mitlisten.
+        if is_dir and _is_private(full):
+            continue
         if not is_dir and ext_set is not None:
             _, e = os.path.splitext(name)
             if e.lower() not in ext_set:
@@ -1199,14 +1229,20 @@ def file_hash(path=""):
     }
 
 
-def read_note(path):
-    """Liest eine Notiz (relativ zum Vault) und gibt {path, content, chars} zurück."""
+def read_note(path, head="agent"):
+    """Liest eine Notiz (relativ zum Vault) und gibt {path, content, chars} zurück.
+
+    head: "agent" sperrt Privat-Vaults (Graph: °_Agent private). ^_Code ruft mit
+    head="code" und behält seine eigene Graph-Freigabe.
+    """
     resolved = _resolve_vault_path(path)
     if not resolved or not resolved.endswith(".md"):
         raise ValueError(f"Ungültiger oder unsicherer Pfad: {path}")
     rel = _rel_to_root(resolved)
     if _is_blocked(rel):
         raise PermissionError(f"Geschützter Ordner — Zugriff verweigert: {rel}")
+    if head == "agent" and _is_private(resolved):
+        raise PermissionError(f"Privat-Vault — Lesen gesperrt (Schloss): {rel}")
     if not os.path.isfile(resolved):
         raise FileNotFoundError(f"Notiz nicht gefunden: {path}")
     with open(resolved, encoding="utf-8", errors="replace") as f:
