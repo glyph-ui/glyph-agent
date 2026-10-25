@@ -1364,7 +1364,7 @@ def apply_edit(path, new_content):
     old_content = current["content"] if current is not None else ""
     if current is not None and _fertig_report_frozen(rel):
         # Job-Schreibschritt: ApplyEdit auf einen bestehenden Fertig-Bericht
-        # hat das SoT-Beispiel (Musterkunde Musterstadt) überschrieben. Anlegen bleibt
+        # hat einen echten Auditbericht (SoT-Beispiel) überschrieben. Anlegen bleibt
         # erlaubt (current is None); Log darf weiter ApplyEdit.
         log.log("apply_edit_skipped", path=rel, reason="exists")
         return {
