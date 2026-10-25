@@ -3,6 +3,8 @@ vault/backups/
 vault/
 logs/
 *.jsonl
+# Reparatur-Backups (enthalten alte Index-Kopien mit Vault-Text)
+.codehead-repair-backups/
 
 # --- Python ---
 __pycache__/
